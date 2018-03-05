@@ -56,6 +56,7 @@
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/vehicle_gps_position.h>
+#include <uORB/topics/extended_kalman_pos.h>
 
 
 int ExtendedKalman::print_usage(const char *reason)
@@ -207,6 +208,7 @@ void ExtendedKalman::run()
  	bool first_gps_run = true;
   	struct vehicle_gps_position_s ref_gps;
   	struct map_projection_reference_s mp_ref = {};
+	orb_advert_t extended_kalman_pos_pub = nullptr;
 
 	while(!should_exit()) {
 		/* wait for sensor update of 1 file descriptor for 1000 ms (1 second) */
@@ -263,6 +265,8 @@ void ExtendedKalman::run()
 						(double)y,
 						(double)raw_gps.lat*10e-8f,
 						(double)raw_gps.lon*10e-8f);
+
+						publish_extended_kalman_pos(extended_kalman_pos_pub, x, y, 0.0);
 					}
 				}
 			}
@@ -270,6 +274,25 @@ void ExtendedKalman::run()
 	}
 
 	PX4_INFO("exiting");
+}
+
+void ExtendedKalman::publish_extended_kalman_pos(orb_advert_t &extended_kalman_pos_pub, float x, float y, float z)
+{
+	extended_kalman_pos_s extended_kalman_pos = {
+		.timestamp = hrt_absolute_time(),
+		.x = x,
+		.y = y,
+		.z = z
+	};
+
+	if (extended_kalman_pos_pub == nullptr) {
+		extended_kalman_pos_pub = orb_advertise_queue(ORB_ID(extended_kalman_pos), &extended_kalman_pos,
+					  10);
+
+	} else {
+		orb_publish(ORB_ID(extended_kalman_pos), extended_kalman_pos_pub, &extended_kalman_pos);
+	}
+
 }
 
 void ExtendedKalman::parameters_update(int parameter_update_sub, bool force)
