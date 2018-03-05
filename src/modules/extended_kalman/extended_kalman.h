@@ -74,6 +74,8 @@ private:
 	 */
 	void parameters_update(int parameter_update_sub, bool force = false);
 
+	void publish_extended_kalman_pos(orb_advert_t &extended_kalman_pos_pub, float x, float y, float z);
+
 
 	control::BlockParamInt _sys_autostart; /**< example parameter */
 };
