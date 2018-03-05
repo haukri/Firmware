@@ -187,7 +187,7 @@ ExtendedKalman::ExtendedKalman(int example_param, bool example_flag)
 
 void ExtendedKalman::run()
 {
-	PX4_INFO("Hello Sky!");
+	PX4_INFO("asdfasdfasdf!");
 
 	/* subscribe to sensor_combined topic */
 	int sensor_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
