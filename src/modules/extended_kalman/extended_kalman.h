@@ -36,6 +36,7 @@
 #include <px4_module.h>
 #include <controllib/blocks.hpp>
 #include <controllib/block/BlockParam.hpp>
+#include "matrix/Matrix.hpp"
 
 extern "C" __EXPORT int extended_kalman_main(int argc, char *argv[]);
 
@@ -75,6 +76,8 @@ private:
 	void parameters_update(int parameter_update_sub, bool force = false);
 
 	void publish_extended_kalman_pos(orb_advert_t &extended_kalman_pos_pub, float x, float y, float z);
+
+	void update_model_inputs(struct actuator_outputs_s *act_out, float &tx, float &ty, float &tz, float &ft);
 
 
 	control::BlockParamInt _sys_autostart; /**< example parameter */
