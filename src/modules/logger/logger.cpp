@@ -634,7 +634,7 @@ void Logger::add_default_topics()
 	add_topic("vehicle_vision_position");
 	add_topic("vtol_vehicle_status", 200);
 	add_topic("wind_estimate", 200);
-	add_topic("extended_kalman_pos", 200);
+	add_topic("extended_kalman", 200);
 }
 
 void Logger::add_high_rate_topics()
