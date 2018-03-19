@@ -247,6 +247,10 @@ void ExtendedKalman::run()
 	float tz = 0;
 	float ft = 0;
 
+	float roll = 0;
+	float pitch = 0;
+	float yaw = 0;
+
 	float dt = 0.2;
 	long last_gps_timestamp = 0;
 
@@ -293,29 +297,7 @@ void ExtendedKalman::run()
 				// Read and scale gyroscope, accelerometer and magnetometer data
 				
 				
-				float accel_scaled[3];
-				accel_scaled[0] = raw_imu.accelerometer_m_s2[0];
-				accel_scaled[1] = raw_imu.accelerometer_m_s2[1];
-				accel_scaled[2] = raw_imu.accelerometer_m_s2[2];
-				float gyro_scaled[3];
-				gyro_scaled[0] = raw_imu.gyro_rad[0];
-				gyro_scaled[1] = raw_imu.gyro_rad[1];
-				gyro_scaled[2] = raw_imu.gyro_rad[2];
-				float mag_scaled[3]; // Lol... prófum bara....
-				mag_scaled[0] = raw_imu.magnetometer_ga[0];
-				mag_scaled[1] = raw_imu.magnetometer_ga[1];	
-				mag_scaled[2] = raw_imu.magnetometer_ga[2];			
-				
-				MadgwickQuaternionUpdate(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], mag_scaled[0], mag_scaled[1], mag_scaled[2], dt);
-
-				
-				    float yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);   
-					float pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
-					float roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
-					// pitch *= 180.0f / 3.14159f;
-					// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
-					// roll  *= 180.0f / 3.14159f;
-
+				process_IMU_data(raw_imu);
 
 				PX4_INFO("Quaternions:\t%8.4f\t%8.4f\t%8.4f",
 						(double)roll,
@@ -500,6 +482,31 @@ void ExtendedKalman::publish_extended_kalman(orb_advert_t &extended_kalman_pub, 
 	}
 }
 
+void ExtendedKalman::process_IMU_data(struct raw_imu){
+	float accel_scaled[3];
+	accel_scaled[0] = raw_imu.accelerometer_m_s2[0];
+	accel_scaled[1] = raw_imu.accelerometer_m_s2[1];
+	accel_scaled[2] = raw_imu.accelerometer_m_s2[2];
+	float gyro_scaled[3];
+	gyro_scaled[0] = raw_imu.gyro_rad[0];
+	gyro_scaled[1] = raw_imu.gyro_rad[1];
+	gyro_scaled[2] = raw_imu.gyro_rad[2];
+	float mag_scaled[3]; // Lol... prófum bara....
+	mag_scaled[0] = raw_imu.magnetometer_ga[0];
+	mag_scaled[1] = raw_imu.magnetometer_ga[1];	
+	mag_scaled[2] = raw_imu.magnetometer_ga[2];			
+	
+	MadgwickQuaternionUpdate(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], mag_scaled[0], mag_scaled[1], mag_scaled[2], dt);   
+	
+	roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
+	pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
+	yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
+
+	// pitch *= 180.0f / 3.14159f;
+	// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
+	// roll  *= 180.0f / 3.14159f;
+}
+
 void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat)
 {
 	float q1 = q[0], q2 = q[1], q3 = q[2], q4 = q[3];   // short name local variable for readability
@@ -585,10 +592,10 @@ void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, flo
 	q4 += qDot4 * deltat;
 	norm = sqrt(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4);    // normalise quaternion
 	norm = 1.0f/norm;
-	q[0] = q1 * norm;
-	q[1] = q2 * norm;
-	q[2] = q3 * norm;
-	q[3] = q4 * norm;
+	q[1] = q1 * norm; // Orientation is switched for Pixhawk compatability
+	q[0] = q2 * norm;
+	q[3] = q3 * norm;
+	q[2] = q4 * norm;
 
 }
 
