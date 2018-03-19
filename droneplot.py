@@ -61,7 +61,7 @@ def convert_ulog2csv(ulog_file_name, messages, output, delimiter):
                 csvfile.write('\n')
 
 
-script_dir = os.path.dirname(__file__)
+script_dir = os.path.dirname(os.path.abspath(__file__))
 list_of_files = glob.glob(script_dir + '/build/posix_sitl_default/logs/*')  # * means all if need specific format then *.csv
 latest_file = max(list_of_files, key=os.path.getctime)
 list_of_files = glob.glob(latest_file + '/*.ulg')

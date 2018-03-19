@@ -37,6 +37,7 @@
 #include <controllib/blocks.hpp>
 #include <controllib/block/BlockParam.hpp>
 #include "matrix/Matrix.hpp"
+#include <deque>
 
 extern "C" __EXPORT int extended_kalman_main(int argc, char *argv[]);
 
@@ -78,6 +79,8 @@ private:
 	void publish_extended_kalman_pos(orb_advert_t &extended_kalman_pos_pub, float x, float y, float z);
 
 	void update_model_inputs(struct actuator_outputs_s *act_out, float &tx, float &ty, float &tz, float &ft);
+
+	double getVariance(const std::deque<double>& vec);
 
 
 	control::BlockParamInt _sys_autostart; /**< example parameter */

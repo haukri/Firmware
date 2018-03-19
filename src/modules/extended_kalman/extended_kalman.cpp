@@ -200,7 +200,7 @@ void ExtendedKalman::run()
 	int act_out_sub_fd = orb_subscribe(ORB_ID(actuator_outputs));
 
 	/* limit the update rate to 5 Hz */
-	orb_set_interval(sensor_sub_fd, 200);
+	orb_set_interval(sensor_sub_fd, 1);
 
 	/* one could wait for multiple topics with this technique, just using one here */
 	px4_pollfd_struct_t fds[] = {
@@ -219,6 +219,11 @@ void ExtendedKalman::run()
 	matrix::SquareMatrix<float, 12> P = matrix::eye<float, 12>();
 	matrix::SquareMatrix<float, 6> R = matrix::eye<float, 6>();
 	matrix::SquareMatrix<float, 12> Q = matrix::eye<float, 12>();
+	for(int i = 0; i < 6; i++)
+		R(i,i) = 0.01;
+	for(int i = 0; i < 12; i++)
+		Q(i,i) = 1;
+
 	matrix::Matrix<float, 6, 12> H;
 	H.setZero();
 	matrix::Matrix<float, 12, 6> HT;
@@ -226,9 +231,9 @@ void ExtendedKalman::run()
 	HT(0,0) = 1;
 	HT(1,1) = 1;
 	HT(2,2) = 1;
-	HT(3,9) = 1;
-	HT(4,10) = 1;
-	HT(5,11) = 1;
+	HT(9,3) = 1;
+	HT(10,4) = 1;
+	HT(11,5) = 1;
 
 	float Ix = 5*10e-3;
 	float Iy = 5*10e-3;
@@ -242,6 +247,14 @@ void ExtendedKalman::run()
 	float ft = 0;
 
 	float dt = 0.2;
+	long last_gps_timestamp = 0;
+
+	bool flying = false;
+
+	std::deque<double> gps_check_vector;
+
+
+	matrix::Matrix<float, 4, 1> test;
 
 
 	while(!should_exit()) {
@@ -282,30 +295,38 @@ void ExtendedKalman::run()
 				if(updated) {
 					orb_copy(ORB_ID(actuator_outputs), act_out_sub_fd, &act_out);
 					update_model_inputs(&act_out, tx, ty, tz, ft);
+					flying = true;
 				}
 
 				struct vehicle_gps_position_s raw_gps;
 
 				orb_check(gps_sub_fd, &updated);
 
-				if (updated) {
+				if (true) {
 					if(first_gps_run) {
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &ref_gps);
-						map_projection_init_timestamped(&mp_ref, ref_gps.lat*10e-8f, ref_gps.lon*10e-8f, hrt_absolute_time());
-						first_gps_run = false;
+						if(gps_check_vector.size() < 6) {
+							gps_check_vector.push_back(ref_gps.alt);
+						}
+						else if(getVariance(gps_check_vector) > 1) {
+							gps_check_vector.push_back(ref_gps.alt);
+							gps_check_vector.pop_front();
+						}
+						else {
+							PX4_INFO("GPS Check success");
+							map_projection_init_timestamped(&mp_ref, ref_gps.lat*10e-8f, ref_gps.lon*10e-8f, hrt_absolute_time());
+							last_gps_timestamp = raw_imu.timestamp;
+							first_gps_run = false;
+						}
 					}
-					else {
+					else if(flying) {
 						float x = 0;
 						float y = 0;
-						float altitude = (raw_gps.alt - ref_gps.alt) / 1000.0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
+						dt = (raw_imu.timestamp - last_gps_timestamp) / 1000000.0;
+						last_gps_timestamp = raw_imu.timestamp;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
-
-						PX4_INFO("Raw GPS:\t%8.4f\t%8.4f\t%8.4f\t%8.4f",
-						(double)x,
-						(double)y,
-						(double)altitude,
-						(double)raw_gps.alt);
+						float altitude = (raw_gps.alt - ref_gps.alt) / 1000.0;
 
 						/*
 							K = P * H' / R;
@@ -322,9 +343,9 @@ void ExtendedKalman::run()
 						xhatdot.setZero();
 						z.setZero();
 
-						z(3,1) = x;
-						z(4,1) = y;
-						z(5,1) = altitude;
+						z(3,0) = x;
+						z(4,0) = y;
+						z(5,0) = altitude;
 
 						F(0,0) = xhat(4,0)*xhat(1,0);
 						F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0);
@@ -390,12 +411,16 @@ void ExtendedKalman::run()
 
 						matrix::Matrix<float, 12, 6> K;
 						matrix::Matrix<float, 12, 12> Pdot;
-						K = P * HT * matrix::inv(R);
-						xhatdot = xhatdot + K * (z - H * xhat);
-						xhat = xhat + xhatdot * dt;
-						Pdot = F * P + P * F.transpose() + Q - P * HT * inv(R) * H * P;
+						K = P * HT * R;
+						xhatdot = xhatdot + (K * (z - H * xhat));
+						xhat = xhat + (xhatdot * dt);
+						Pdot = F * P + P * F.transpose() + Q - P * HT * R * H * P;
 						P = P + Pdot * dt;
 
+						PX4_INFO("\t%8.4f\t%8.4f\t%8.4f",
+						(double)0.1,
+						(double)0.1,
+						(double)0.1);
 						publish_extended_kalman_pos(extended_kalman_pos_pub, xhat(9,0), xhat(10,0), xhat(11,0));
 					}
 				}
@@ -413,6 +438,21 @@ void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, fl
 	ty = 0;
 	tz = 0;
 	ft = 1e-6*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
+	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
+}
+
+double ExtendedKalman::getVariance(const std::deque<double>& vec) {
+    double mean = 0, M2 = 0, variance = 0;
+
+    size_t n = vec.size();
+    for(size_t i = 0; i < n; ++i) {
+        double delta = vec[i] - mean;
+        mean += delta / (i + 1);
+        M2 += delta * (vec[i] - mean);
+        variance = M2 / (i + 1);
+    }
+
+    return variance;
 }
 
 void ExtendedKalman::publish_extended_kalman_pos(orb_advert_t &extended_kalman_pos_pub, float x, float y, float z)
