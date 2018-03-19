@@ -37,6 +37,7 @@
 #include <controllib/blocks.hpp>
 #include <controllib/block/BlockParam.hpp>
 #include "matrix/Matrix.hpp"
+#include <deque>
 
 extern "C" __EXPORT int extended_kalman_main(int argc, char *argv[]);
 
@@ -79,6 +80,7 @@ private:
 
 	void update_model_inputs(struct actuator_outputs_s *act_out, float &tx, float &ty, float &tz, float &ft);
 
+	double getVariance(const std::deque<double>& vec);
 	void MadgwickQuaternionUpdate(float q[], float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat);
 
 
