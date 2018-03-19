@@ -308,19 +308,32 @@ void ExtendedKalman::run()
 				
 				MadgwickQuaternionUpdate(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], mag_scaled[0], mag_scaled[1], mag_scaled[2], dt);
 
-				
-				    float yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);   
-					float pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
-					float roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
-					// pitch *= 180.0f / 3.14159f;
-					// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
-					// roll  *= 180.0f / 3.14159f;
+				float yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);   
+				float pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
+				float roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
+				roll += 3.14159f;
+				// pitch *= 180.0f / 3.14159f;
+				// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
+				// roll  *= 180.0f / 3.14159f;
 
+				extended_kalman_s extended_kalman = {
+					.timestamp = hrt_absolute_time(),
+					.q[1] = q[0],
+					.q[0] = q[1],
+					.q[3] = q[2],
+					.q[2] = q[3]
+				};
 
-				PX4_INFO("Quaternions:\t%8.4f\t%8.4f\t%8.4f",
+				if (extended_kalman_pub == nullptr) {
+					extended_kalman_pub = orb_advertise_queue(ORB_ID(extended_kalman), &extended_kalman, 10);
+				} else {
+					orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
+				}
+
+				/*PX4_INFO("Quaternions:\t%8.4f\t%8.4f\t%8.4f",
 						(double)roll,
 						(double)pitch,
-						(double)yaw);
+						(double)yaw);*/
 				
 				struct actuator_outputs_s act_out;
 				orb_check(act_out_sub_fd, &updated);
@@ -376,6 +389,9 @@ void ExtendedKalman::run()
 						xhatdot.setZero();
 						z.setZero();
 
+						z(0,0) = roll;
+						z(1,0) = pitch;
+						z(2,0) = yaw;
 						z(3,0) = x;
 						z(4,0) = y;
 						z(5,0) = altitude;
@@ -450,7 +466,12 @@ void ExtendedKalman::run()
 						Pdot = F * P + P * F.transpose() + Q - P * HT * R * H * P;
 						P = P + Pdot * dt;
 
-						publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
+						PX4_INFO("EKF:\t%8.4f\t%8.4f\t%8.4f",
+						(double)xhat(9,0),
+						(double)xhat(10,0),
+						(double)xhat(11,0));
+
+						//publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
 					}
 				}
 			}

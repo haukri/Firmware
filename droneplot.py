@@ -68,7 +68,7 @@ list_of_files = glob.glob(latest_file + '/*.ulg')
 latest_file = max(list_of_files, key=os.path.getctime)
 print(latest_file)
 
-convert_ulog2csv(latest_file, 'extended_kalman,sensor_combined,actuator_outputs', False, ',')
+convert_ulog2csv(latest_file, 'extended_kalman,sensor_combined,actuator_outputs,vehicle_attitude', False, ',')
 
 
 # sensors = pd.read_csv('1/sensors.csv')
