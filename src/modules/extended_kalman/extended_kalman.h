@@ -76,11 +76,12 @@ private:
 	 */
 	void parameters_update(int parameter_update_sub, bool force = false);
 
-	void publish_extended_kalman_pos(orb_advert_t &extended_kalman_pos_pub, float x, float y, float z);
+	void publish_extended_kalman(orb_advert_t &extended_kalman_pub, float x, float y, float z);
 
 	void update_model_inputs(struct actuator_outputs_s *act_out, float &tx, float &ty, float &tz, float &ft);
 
 	double getVariance(const std::deque<double>& vec);
+	void MadgwickQuaternionUpdate(float q[], float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat);
 
 
 	control::BlockParamInt _sys_autostart; /**< example parameter */
