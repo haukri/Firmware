@@ -312,9 +312,9 @@ void ExtendedKalman::run()
 				    float yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);   
 					float pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
 					float roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
-					pitch *= 180.0f / 3.14159f;
-					yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
-					roll  *= 180.0f / 3.14159f;
+					// pitch *= 180.0f / 3.14159f;
+					// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
+					// roll  *= 180.0f / 3.14159f;
 
 
 				PX4_INFO("Quaternions:\t%8.4f\t%8.4f\t%8.4f",
@@ -359,16 +359,7 @@ void ExtendedKalman::run()
 						dt = (raw_imu.timestamp - last_gps_timestamp) / 1000000.0;
 						last_gps_timestamp = raw_imu.timestamp;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
-<<<<<<< HEAD
 						float altitude = (raw_gps.alt - ref_gps.alt) / 1000.0;
-=======
-
-						//PX4_INFO("Raw GPS:\t%8.4f\t%8.4f\t%8.4f\t%8.4f",
-						//(double)x,
-						//(double)y,
-						//(double)altitude,
-						//(double)raw_gps.alt);
->>>>>>> 8788f4d1ca5edf8aaca970fd712296ef103f380f
 
 						/*
 							K = P * H' / R;
@@ -459,15 +450,7 @@ void ExtendedKalman::run()
 						Pdot = F * P + P * F.transpose() + Q - P * HT * R * H * P;
 						P = P + Pdot * dt;
 
-<<<<<<< HEAD
-						PX4_INFO("\t%8.4f\t%8.4f\t%8.4f",
-						(double)0.1,
-						(double)0.1,
-						(double)0.1);
-						publish_extended_kalman_pos(extended_kalman_pos_pub, xhat(9,0), xhat(10,0), xhat(11,0));
-=======
 						publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
->>>>>>> 8788f4d1ca5edf8aaca970fd712296ef103f380f
 					}
 				}
 			}
