@@ -592,9 +592,9 @@ void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, flo
 	q4 += qDot4 * deltat;
 	norm = sqrt(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4);    // normalise quaternion
 	norm = 1.0f/norm;
-	q[1] = q1 * norm; // Orientation is switched for Pixhawk compatability
+	q[1] = -q1 * norm; // Orientation is switched for Pixhawk compatability
 	q[0] = q2 * norm;
-	q[3] = q3 * norm;
+	q[3] = -q3 * norm;
 	q[2] = q4 * norm;
 
 }
