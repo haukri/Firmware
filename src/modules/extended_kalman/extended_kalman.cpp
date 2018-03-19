@@ -312,9 +312,9 @@ void ExtendedKalman::run()
 				    float yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);   
 					float pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
 					float roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
-					pitch *= 180.0f / 3.14159f;
-					yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
-					roll  *= 180.0f / 3.14159f;
+					// pitch *= 180.0f / 3.14159f;
+					// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
+					// roll  *= 180.0f / 3.14159f;
 
 
 				PX4_INFO("Quaternions:\t%8.4f\t%8.4f\t%8.4f",
