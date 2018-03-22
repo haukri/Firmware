@@ -66,10 +66,26 @@ list_of_files = glob.glob(script_dir + '/build/posix_sitl_default/logs/*')  # * 
 latest_file = max(list_of_files, key=os.path.getctime)
 list_of_files = glob.glob(latest_file + '/*.ulg')
 latest_file = max(list_of_files, key=os.path.getctime)
-print(latest_file)
+print(os.path.splitext(latest_file)[0])
 
-convert_ulog2csv(latest_file, 'extended_kalman,sensor_combined,actuator_outputs,vehicle_attitude', False, ',')
+convert_ulog2csv(latest_file, 'vehicle_local_position,vehicle_local_position_groundtruth,extended_kalman,sensor_combined,actuator_outputs,vehicle_attitude', False, ',')
 
+pos = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_local_position_0.csv')
+truepos = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_local_position_groundtruth_0.csv')
+kalman = pd.read_csv(os.path.splitext(latest_file)[0] + '_extended_kalman_0.csv')
+actuators = pd.read_csv(os.path.splitext(latest_file)[0] + '_actuator_outputs_0.csv')
+
+# plt.scatter(kalman['timestamp'], kalman['z'], color='r')
+# plt.scatter(pos['timestamp'], pos['z'], color='b')
+# plt.scatter(truepos['timestamp'], truepos['z'], color='g')
+# plt.scatter(kalman['timestamp'], kalman['z_gps'], color='purple')
+
+plt.plot(actuators['output[0]'])
+#plt.plot(actuators['output[1]'])
+plt.plot(actuators['output[2]'])
+#plt.plot(actuators['output[3]'])
+
+# plt.plot(kalman['x_gps'], color='purple')
 
 # sensors = pd.read_csv('1/sensors.csv')
 

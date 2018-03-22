@@ -217,16 +217,25 @@ void ExtendedKalman::run()
 
 	matrix::Matrix<float, 12, 1> xhat;
 	xhat.setZero();
-	matrix::SquareMatrix<float, 12> P = matrix::eye<float, 12>();
-	matrix::SquareMatrix<float, 6> R = matrix::eye<float, 6>();
-	matrix::SquareMatrix<float, 12> Q = matrix::eye<float, 12>();
+	matrix::Matrix<float, 12, 12> P;
+	matrix::Matrix<float, 6, 6> R_inv;
+	matrix::Matrix<float, 12, 12> Q;
 	for(int i = 0; i < 6; i++)
-		R(i,i) = 0.01;
-	for(int i = 0; i < 12; i++)
-		Q(i,i) = 1;
+		R_inv(i,i) = 1000;
+	for(int i = 0; i < 12; i++) {
+		Q(i,i) = 0.1;
+		P(i,i) = 1;
+	}
+
 
 	matrix::Matrix<float, 6, 12> H;
 	H.setZero();
+	H(0,0) = 1;
+	H(1,1) = 1;
+	H(2,2) = 1;
+	H(3,9) = 1;
+	H(4,10) = 1;
+	H(5,11) = 1;
 	matrix::Matrix<float, 12, 6> HT;
 	HT.setZero();
 	HT(0,0) = 1;
@@ -246,6 +255,10 @@ void ExtendedKalman::run()
 	float ty = 0;
 	float tz = 0;
 	float ft = 0;
+
+	float roll = 0;
+	float pitch = 0;
+	float yaw = 0;
 
 	float dt = 0.2;
 	long last_gps_timestamp = 0;
@@ -292,43 +305,24 @@ void ExtendedKalman::run()
 
 				// Read and scale gyroscope, accelerometer and magnetometer data
 				
-				
-				float accel_scaled[3];
-				accel_scaled[0] = raw_imu.accelerometer_m_s2[0];
-				accel_scaled[1] = raw_imu.accelerometer_m_s2[1];
-				accel_scaled[2] = raw_imu.accelerometer_m_s2[2];
-				float gyro_scaled[3];
-				gyro_scaled[0] = raw_imu.gyro_rad[0];
-				gyro_scaled[1] = raw_imu.gyro_rad[1];
-				gyro_scaled[2] = raw_imu.gyro_rad[2];
-				float mag_scaled[3]; // Lol... prófum bara....
-				mag_scaled[0] = raw_imu.magnetometer_ga[0];
-				mag_scaled[1] = raw_imu.magnetometer_ga[1];	
-				mag_scaled[2] = raw_imu.magnetometer_ga[2];			
-				
-				MadgwickQuaternionUpdate(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], mag_scaled[0], mag_scaled[1], mag_scaled[2], dt);
+				process_IMU_data(&raw_imu, q, dt);
+					
+				roll  = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]);
+				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3]));
+				yaw   = atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]);
 
-				float yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);   
-				float pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
-				float roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
-				roll += 3.14159f;
-				// pitch *= 180.0f / 3.14159f;
-				// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
-				// roll  *= 180.0f / 3.14159f;
-
-				extended_kalman_s extended_kalman = {
+				/*extended_kalman_s extended_kalman = {
 					.timestamp = hrt_absolute_time(),
-					.q[1] = q[0],
-					.q[0] = q[1],
-					.q[3] = q[2],
-					.q[2] = q[3]
+					.q[0] = roll,
+					.q[1] = pitch,
+					.q[2] = yaw
 				};
 
 				if (extended_kalman_pub == nullptr) {
 					extended_kalman_pub = orb_advertise_queue(ORB_ID(extended_kalman), &extended_kalman, 10);
 				} else {
 					orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
-				}
+				}*/
 
 				/*PX4_INFO("Quaternions:\t%8.4f\t%8.4f\t%8.4f",
 						(double)roll,
@@ -369,10 +363,10 @@ void ExtendedKalman::run()
 						float x = 0;
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
-						dt = (raw_imu.timestamp - last_gps_timestamp) / 1000000.0;
+						dt = 0.001; // (raw_imu.timestamp - last_gps_timestamp) / 1000000.0;
 						last_gps_timestamp = raw_imu.timestamp;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
-						float altitude = (raw_gps.alt - ref_gps.alt) / 1000.0;
+						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
 
 						/*
 							K = P * H' / R;
@@ -460,16 +454,34 @@ void ExtendedKalman::run()
 
 						matrix::Matrix<float, 12, 6> K;
 						matrix::Matrix<float, 12, 12> Pdot;
-						K = P * HT * R;
+						matrix::Matrix<float, 12, 6> debug;
+						K = P * HT * R_inv;
+						debug = P * HT;
 						xhatdot = xhatdot + (K * (z - H * xhat));
 						xhat = xhat + (xhatdot * dt);
-						Pdot = F * P + P * F.transpose() + Q - P * HT * R * H * P;
+						Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
 						P = P + Pdot * dt;
 
-						PX4_INFO("EKF:\t%8.4f\t%8.4f\t%8.4f",
+						/*PX4_INFO("EKF:\t%8.4f\t%8.4f\t%8.4f",
 						(double)xhat(9,0),
 						(double)xhat(10,0),
-						(double)xhat(11,0));
+						(double)xhat(11,0));*/
+
+						extended_kalman_s extended_kalman = {
+							.timestamp = hrt_absolute_time(),
+							.x = xhat(9,0),
+							.y = xhat(10,0),
+							.z = xhat(11,0),
+							.x_gps = x,
+							.y_gps = y,
+							.z_gps = altitude
+						};
+
+						if (extended_kalman_pub == nullptr) {
+							extended_kalman_pub = orb_advertise_queue(ORB_ID(extended_kalman), &extended_kalman, 10);
+						} else {
+							orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
+						}
 
 						//publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
 					}
@@ -484,10 +496,14 @@ void ExtendedKalman::run()
 void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, float &tx, float &ty, float &tz, float &ft) {
 	/* Convert drone thrust levels to tx, ty, tz and ft */
 	// PX4_INFO("Actuator Outputs:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3]);
-	tx = 0;
-	ty = 0;
-	tz = 0;
-	ft = 1e-6*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
+	float b = 1e-6;
+	float l = 0.3;
+	float d = 1e-6;
+
+	ty = 7e-7*l*(pow(act_out->output[2], 2) - pow(act_out->output[0], 2));
+	tx = 7e-7*l*(pow(act_out->output[3], 2) - pow(act_out->output[1], 2));;
+	tz = d*(pow(act_out->output[1], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[2], 2));
+	ft = b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 }
 
@@ -519,6 +535,31 @@ void ExtendedKalman::publish_extended_kalman(orb_advert_t &extended_kalman_pub, 
 	} else {
 		orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
 	}
+}
+
+void ExtendedKalman::process_IMU_data(struct sensor_combined_s *raw_imu, float q[], float dt){
+	float accel_scaled[3];
+	accel_scaled[0] = raw_imu->accelerometer_m_s2[0];
+	accel_scaled[1] = raw_imu->accelerometer_m_s2[1];
+	accel_scaled[2] = raw_imu->accelerometer_m_s2[2];
+	float gyro_scaled[3];
+	gyro_scaled[0] = raw_imu->gyro_rad[0];
+	gyro_scaled[1] = raw_imu->gyro_rad[1];
+	gyro_scaled[2] = raw_imu->gyro_rad[2];
+	float mag_scaled[3]; // Lol... prófum bara....
+	mag_scaled[0] = raw_imu->magnetometer_ga[0];
+	mag_scaled[1] = raw_imu->magnetometer_ga[1];	
+	mag_scaled[2] = raw_imu->magnetometer_ga[2];			
+	
+	MadgwickQuaternionUpdate(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], mag_scaled[0], mag_scaled[1], mag_scaled[2], dt);   
+		
+	// roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
+	// pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
+	// yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
+	
+	// pitch *= 180.0f / 3.14159f;
+	// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
+	// roll  *= 180.0f / 3.14159f;
 }
 
 void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat)
