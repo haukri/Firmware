@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy
 import glob
 import os
+import math
 
 from core import ULog
 
@@ -68,22 +69,43 @@ list_of_files = glob.glob(latest_file + '/*.ulg')
 latest_file = max(list_of_files, key=os.path.getctime)
 print(os.path.splitext(latest_file)[0])
 
-convert_ulog2csv(latest_file, 'vehicle_local_position,vehicle_local_position_groundtruth,extended_kalman,sensor_combined,actuator_outputs,vehicle_attitude', False, ',')
+convert_ulog2csv(latest_file, 'vehicle_local_position,vehicle_local_position_groundtruth,extended_kalman,sensor_combined,actuator_outputs,vehicle_attitude,vehicle_attitude_groundtruth', False, ',')
 
 pos = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_local_position_0.csv')
 truepos = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_local_position_groundtruth_0.csv')
 kalman = pd.read_csv(os.path.splitext(latest_file)[0] + '_extended_kalman_0.csv')
 actuators = pd.read_csv(os.path.splitext(latest_file)[0] + '_actuator_outputs_0.csv')
+trueatt = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_attitude_groundtruth_0.csv')
 
-# plt.scatter(kalman['timestamp'], kalman['z'], color='r')
-# plt.scatter(pos['timestamp'], pos['z'], color='b')
-# plt.scatter(truepos['timestamp'], truepos['z'], color='g')
-# plt.scatter(kalman['timestamp'], kalman['z_gps'], color='purple')
 
-plt.plot(actuators['output[0]'])
-#plt.plot(actuators['output[1]'])
-plt.plot(actuators['output[2]'])
-#plt.plot(actuators['output[3]'])
+q0 = trueatt['q[0]']
+q1 = trueatt['q[1]']
+q2 = trueatt['q[2]']
+q3 = trueatt['q[3]']
+
+trueroll = []
+truepitch = []
+trueyaw = []
+
+qall = zip(q0, q1, q2, q3)
+
+for q in qall:
+    trueroll.append(math.atan2(2.0 * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]))
+    truepitch.append(-math.asin(2.0 * (-q[0] * -q[2] - q[1] * q[3])))
+    trueyaw.append(math.atan2(2.0 * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]))
+
+# plt.scatter(kalman['timestamp'], kalman['yaw'], color='r')
+# plt.scatter(trueatt['timestamp'], trueyaw, color='b')
+
+plt.scatter(kalman['timestamp'], kalman['x'], color='r')
+plt.scatter(pos['timestamp'], pos['x'], color='b')
+plt.scatter(truepos['timestamp'], truepos['x'], color='g')
+plt.scatter(kalman['timestamp'], kalman['x_gps'], color='purple')
+
+# plt.plot(actuators['output[0]'])
+# plt.plot(actuators['output[1]'])
+# plt.plot(actuators['output[2]'])
+# plt.plot(actuators['output[3]'])
 
 # plt.plot(kalman['x_gps'], color='purple')
 

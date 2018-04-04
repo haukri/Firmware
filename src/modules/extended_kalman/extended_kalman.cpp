@@ -46,6 +46,9 @@
 #include <math.h>
 #include <drivers/drv_hrt.h>
 #include <lib/geo/geo.h>
+#include <lib/conversion/rotation.h>
+
+#include <iostream>
 
 
 #include <uORB/topics/parameter_update.h>
@@ -201,7 +204,7 @@ void ExtendedKalman::run()
 	int act_out_sub_fd = orb_subscribe(ORB_ID(actuator_outputs));
 
 	/* limit the update rate to 5 Hz */
-	orb_set_interval(sensor_sub_fd, 1);
+	//orb_set_interval(sensor_sub_fd, 1);
 
 	/* one could wait for multiple topics with this technique, just using one here */
 	px4_pollfd_struct_t fds[] = {
@@ -221,7 +224,7 @@ void ExtendedKalman::run()
 	matrix::Matrix<float, 6, 6> R_inv;
 	matrix::Matrix<float, 12, 12> Q;
 	for(int i = 0; i < 6; i++)
-		R_inv(i,i) = 1000;
+		R_inv(i,i) = 100;
 	for(int i = 0; i < 12; i++) {
 		Q(i,i) = 0.1;
 		P(i,i) = 1;
@@ -245,11 +248,11 @@ void ExtendedKalman::run()
 	HT(10,4) = 1;
 	HT(11,5) = 1;
 
-	float Ix = 5*10e-3;
-	float Iy = 5*10e-3;
-	float Iz = 10*10e-3;
+	float Ix = 0.04;
+	float Iy = 0.04;
+	float Iz = 0.1;
 	float g = 9.8;
-	float m = 1;
+	float m = 1.535;
 
 	float tx = 0;
 	float ty = 0;
@@ -261,7 +264,7 @@ void ExtendedKalman::run()
 	float yaw = 0;
 
 	float dt = 0.2;
-	long last_gps_timestamp = 0;
+	float last_kalman_dt = 0;
 
 	bool flying = false;
 
@@ -309,7 +312,9 @@ void ExtendedKalman::run()
 					
 				roll  = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]);
 				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3]));
-				yaw   = atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]);
+				yaw   = -atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]);
+
+				
 
 				/*extended_kalman_s extended_kalman = {
 					.timestamp = hrt_absolute_time(),
@@ -355,16 +360,18 @@ void ExtendedKalman::run()
 						else {
 							PX4_INFO("GPS Check success");
 							map_projection_init_timestamped(&mp_ref, ref_gps.lat*10e-8f, ref_gps.lon*10e-8f, hrt_absolute_time());
-							last_gps_timestamp = raw_imu.timestamp;
 							first_gps_run = false;
+							last_kalman_dt = hrt_absolute_time();
 						}
 					}
 					else if(flying) {
 						float x = 0;
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
-						dt = 0.001; // (raw_imu.timestamp - last_gps_timestamp) / 1000000.0;
-						last_gps_timestamp = raw_imu.timestamp;
+						float time_now = hrt_absolute_time();
+						dt = 0.002; //(time_now - last_kalman_dt) / 1000000.0;
+
+						last_kalman_dt = time_now;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
 						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
 
@@ -455,6 +462,7 @@ void ExtendedKalman::run()
 						matrix::Matrix<float, 12, 6> K;
 						matrix::Matrix<float, 12, 12> Pdot;
 						matrix::Matrix<float, 12, 6> debug;
+						
 						K = P * HT * R_inv;
 						debug = P * HT;
 						xhatdot = xhatdot + (K * (z - H * xhat));
@@ -462,10 +470,8 @@ void ExtendedKalman::run()
 						Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
 						P = P + Pdot * dt;
 
-						/*PX4_INFO("EKF:\t%8.4f\t%8.4f\t%8.4f",
-						(double)xhat(9,0),
-						(double)xhat(10,0),
-						(double)xhat(11,0));*/
+						//PX4_INFO("EKF:\t%8.4f",
+						//(double)xhat(11,0));
 
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
@@ -474,7 +480,10 @@ void ExtendedKalman::run()
 							.z = xhat(11,0),
 							.x_gps = x,
 							.y_gps = y,
-							.z_gps = altitude
+							.z_gps = altitude,
+							.roll = roll,
+							.pitch = pitch,
+							.yaw = yaw
 						};
 
 						if (extended_kalman_pub == nullptr) {
@@ -496,13 +505,16 @@ void ExtendedKalman::run()
 void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, float &tx, float &ty, float &tz, float &ft) {
 	/* Convert drone thrust levels to tx, ty, tz and ft */
 	// PX4_INFO("Actuator Outputs:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3]);
-	float b = 1e-6;
-	float l = 0.3;
+	float b = 1.3e-6;
+	float l = 0.25;
 	float d = 1e-6;
 
-	ty = 7e-7*l*(pow(act_out->output[2], 2) - pow(act_out->output[0], 2));
-	tx = 7e-7*l*(pow(act_out->output[3], 2) - pow(act_out->output[1], 2));;
-	tz = d*(pow(act_out->output[1], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[2], 2));
+	std::cout << act_out->output[0] << std::endl;
+	//PX4_INFO("Act:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3] );
+
+	tx = b*l*(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
+	ty = b*l*(pow(act_out->output[2], 2) - pow(act_out->output[3], 2));;
+	tz = d*(pow(act_out->output[2], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[1], 2));
 	ft = b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 }
