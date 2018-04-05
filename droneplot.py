@@ -101,6 +101,8 @@ plt.scatter(kalman['timestamp'], kalman['x'], color='r')
 plt.scatter(pos['timestamp'], pos['x'], color='b')
 plt.scatter(truepos['timestamp'], truepos['x'], color='g')
 plt.scatter(kalman['timestamp'], kalman['x_gps'], color='purple')
+plt.scatter(kalman['timestamp'], kalman['y_gps'], color='orange')
+plt.scatter(kalman['timestamp'], kalman['z_gps'], color='brown')
 
 # plt.plot(actuators['output[0]'])
 # plt.plot(actuators['output[1]'])

@@ -49,6 +49,7 @@
 #include <lib/conversion/rotation.h>
 
 #include <iostream>
+#include <random>
 
 
 #include <uORB/topics/parameter_update.h>
@@ -61,6 +62,7 @@
 #include <uORB/topics/vehicle_gps_position.h>
 #include <uORB/topics/extended_kalman.h>
 #include <uORB/topics/actuator_outputs.h>
+#include <uORB/topics/vehicle_local_position.h>
 
 #define beta 0.60459927739f
 
@@ -195,7 +197,7 @@ void LinearKalman::run()
 	PX4_INFO("asdfasdfasdf!");
 
 	/* subscribe to sensor_combined topic */
-	int sensor_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
+	// int sensor_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
 
 	/* subscribe to vehicle_gps_position topic */
 	int gps_sub_fd = orb_subscribe(ORB_ID(vehicle_gps_position));
@@ -203,12 +205,15 @@ void LinearKalman::run()
 	/* subscribe to actuator_outputs topic */
 	int act_out_sub_fd = orb_subscribe(ORB_ID(actuator_outputs));
 
+	int attitude_sub_fd = orb_subscribe(ORB_ID(vehicle_attitude));
+	int local_pos_sub_fd = orb_subscribe(ORB_ID(vehicle_local_position));
+
 	/* limit the update rate to 5 Hz */
 	//orb_set_interval(sensor_sub_fd, 1);
 
 	/* one could wait for multiple topics with this technique, just using one here */
 	px4_pollfd_struct_t fds[] = {
-		{ .fd = sensor_sub_fd,   .events = POLLIN },
+		{ .fd = act_out_sub_fd,   .events = POLLIN },
 	};
 
 	int error_counter = 0;
@@ -275,6 +280,9 @@ void LinearKalman::run()
 
 	float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion for Magwick's filter
 
+	std::default_random_engine generator;
+    std::normal_distribution<double> dist(0.0, 0.1);
+
 	while(!should_exit()) {
 		/* wait for sensor update of 1 file descriptor for 1000 ms (1 second) */
 		int poll_ret = px4_poll(fds, 1, 1000);
@@ -297,22 +305,31 @@ void LinearKalman::run()
       		/* checking for update from IMU */
 			if (fds[0].revents & POLLIN) {
 				/* obtained data for the first file descriptor */
-				struct sensor_combined_s raw_imu;
+				struct vehicle_attitude_s att;
 				/* copy sensors raw data into local buffer */
-				orb_copy(ORB_ID(sensor_combined), sensor_sub_fd, &raw_imu);
+				orb_copy(ORB_ID(vehicle_attitude), attitude_sub_fd, &att);
+				
 				/*PX4_INFO("Raw Accelerometer:\t%8.4f\t%8.4f\t%8.4f",
 					 (double)raw_imu.accelerometer_m_s2[0],
 					 (double)raw_imu.accelerometer_m_s2[1],
 					 (double)raw_imu.accelerometer_m_s2[2]);
         		*/
 
+				struct vehicle_local_position_s loc_pos;
+				orb_copy(ORB_ID(vehicle_local_position), local_pos_sub_fd, &loc_pos);
+
 				// Read and scale gyroscope, accelerometer and magnetometer data
 				
-				process_IMU_data(&raw_imu, q, dt);
+				// process_IMU_data(&raw_imu, q, dt);
+
+				q[0] = att.q[0];
+				q[1] = att.q[1];
+				q[2] = att.q[2];
+				q[3] = att.q[3];
 					
-				roll  = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]);
-				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3]));
-				yaw   = -atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]);
+				roll  = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]) + dist(generator);
+				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3])) + dist(generator);
+				yaw   = -atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]) + dist(generator);
 
 				
 
@@ -329,7 +346,6 @@ void LinearKalman::run()
 					orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
 				}*/
 
-				PX4_INFO("WORK");
 				
 				struct actuator_outputs_s act_out;
 				orb_check(act_out_sub_fd, &updated);
@@ -370,7 +386,7 @@ void LinearKalman::run()
 
 						last_kalman_dt = time_now;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
-						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
+						// float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
 
 						/*
 							K = P * H' / R;
@@ -390,9 +406,9 @@ void LinearKalman::run()
 						z(0,0) = roll;
 						z(1,0) = pitch;
 						z(2,0) = yaw;
-						z(3,0) = x;
-						z(4,0) = y;
-						z(5,0) = altitude;
+						z(3,0) = loc_pos.x + dist(generator);
+						z(4,0) = loc_pos.y + dist(generator);
+						z(5,0) = loc_pos.z + dist(generator);
 
 						F(0,0) = xhat(4,0)*xhat(1,0);
 						F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0);
@@ -475,9 +491,9 @@ void LinearKalman::run()
 							.x = xhat(9,0),
 							.y = xhat(10,0),
 							.z = xhat(11,0),
-							.x_gps = x,
-							.y_gps = y,
-							.z_gps = altitude,
+							.x_gps = tx,
+							.y_gps = ty,
+							.z_gps = tz,
 							.roll = roll,
 							.pitch = pitch,
 							.yaw = yaw
@@ -506,7 +522,6 @@ void LinearKalman::update_model_inputs(struct actuator_outputs_s * act_out, floa
 	float l = 0.25;
 	float d = 1e-6;
 
-	std::cout << act_out->output[0] << std::endl;
 	//PX4_INFO("Act:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3] );
 
 	tx = b*l*(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
