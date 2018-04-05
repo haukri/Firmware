@@ -197,7 +197,7 @@ void LinearKalman::run()
 	PX4_INFO("asdfasdfasdf!");
 
 	/* subscribe to sensor_combined topic */
-	// int sensor_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
+	//int sensor_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
 
 	/* subscribe to vehicle_gps_position topic */
 	int gps_sub_fd = orb_subscribe(ORB_ID(vehicle_gps_position));
@@ -269,7 +269,7 @@ void LinearKalman::run()
 	float yaw = 0;
 
 	float dt = 0.2;
-	float last_kalman_dt = 0;
+	//float last_kalman_dt = 0;
 
 	bool flying = false;
 
@@ -281,7 +281,7 @@ void LinearKalman::run()
 	float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion for Magwick's filter
 
 	std::default_random_engine generator;
-    std::normal_distribution<double> dist(0.0, 0.1);
+    std::normal_distribution<float> dist(0.0, 0.1);
 
 	while(!should_exit()) {
 		/* wait for sensor update of 1 file descriptor for 1000 ms (1 second) */
@@ -319,17 +319,18 @@ void LinearKalman::run()
 				orb_copy(ORB_ID(vehicle_local_position), local_pos_sub_fd, &loc_pos);
 
 				// Read and scale gyroscope, accelerometer and magnetometer data
-				
-				// process_IMU_data(&raw_imu, q, dt);
+				//struct sensor_combined_s raw_imu;
+				//orb_copy(ORB_ID(sensor_combined), sensor_sub_fd, &raw_imu);
+				//process_IMU_data(&raw_imu, q, dt);
 
 				q[0] = att.q[0];
 				q[1] = att.q[1];
 				q[2] = att.q[2];
 				q[3] = att.q[3];
 					
-				roll  = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]) + dist(generator);
-				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3])) + dist(generator);
-				yaw   = -atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]) + dist(generator);
+				roll  = (float)atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]);// + dist(generator);
+				pitch = (float)-asin(2.0f * (-q[0] * -q[2] - q[1] * q[3]));// + dist(generator);
+				yaw   = (float)-atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]);// + dist(generator);
 
 				
 
@@ -374,17 +375,17 @@ void LinearKalman::run()
 							PX4_INFO("GPS Check success");
 							map_projection_init_timestamped(&mp_ref, ref_gps.lat*10e-8f, ref_gps.lon*10e-8f, hrt_absolute_time());
 							first_gps_run = false;
-							last_kalman_dt = hrt_absolute_time();
+							//last_kalman_dt = hrt_absolute_time();
 						}
 					}
 					else if(flying) {
 						float x = 0;
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
-						float time_now = hrt_absolute_time();
+						//float time_now = hrt_absolute_time();
 						dt = 0.002; //(time_now - last_kalman_dt) / 1000000.0;
 
-						last_kalman_dt = time_now;
+						//last_kalman_dt = time_now;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
 						// float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
 
@@ -486,6 +487,7 @@ void LinearKalman::run()
 						//PX4_INFO("EKF:\t%8.4f",
 						//(double)xhat(11,0));
 
+						/*
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
 							.x = xhat(9,0),
@@ -504,8 +506,9 @@ void LinearKalman::run()
 						} else {
 							orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
 						}
+						*/
 
-						//publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
+						publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
 					}
 				}
 			}
@@ -524,10 +527,10 @@ void LinearKalman::update_model_inputs(struct actuator_outputs_s * act_out, floa
 
 	//PX4_INFO("Act:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3] );
 
-	tx = b*l*(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
-	ty = b*l*(pow(act_out->output[2], 2) - pow(act_out->output[3], 2));;
-	tz = d*(pow(act_out->output[2], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[1], 2));
-	ft = b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
+	tx = b*l*(float)(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
+	ty = b*l*(float)(pow(act_out->output[2], 2) - pow(act_out->output[3], 2));;
+	tz = d*(float)(pow(act_out->output[2], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[1], 2));
+	ft = b*(float)(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 }
 
@@ -577,9 +580,9 @@ void LinearKalman::process_IMU_data(struct sensor_combined_s *raw_imu, float q[]
 	
 	MadgwickQuaternionUpdate(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], mag_scaled[0], mag_scaled[1], mag_scaled[2], dt);   
 		
-	// roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
-	// pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
-	// yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
+	//roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
+	//pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
+	//yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
 	
 	// pitch *= 180.0f / 3.14159f;
 	// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
@@ -590,33 +593,33 @@ void LinearKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, float
 {
 	float q1 = q[0], q2 = q[1], q3 = q[2], q4 = q[3];   // short name local variable for readability
 	float norm;
-	float hx, hy, _2bx, _2bz;
-	float s1, s2, s3, s4;	
+	//float hy;
+	//float s1, s2, s3, s4;	
 	float qDot1, qDot2, qDot3, qDot4;
 
 	// Auxiliary variables to avoid repeated arithmetic
-	float _2q1mx;
-	float _2q1my;
-	float _2q1mz;
-	float _2q2mx;
-	float _4bx;
-	float _4bz;
-	float _2q1 = 2.0f * q1;
-	float _2q2 = 2.0f * q2;
-	float _2q3 = 2.0f * q3;
-	float _2q4 = 2.0f * q4;
-	float _2q1q3 = 2.0f * q1 * q3;
-	float _2q3q4 = 2.0f * q3 * q4;
-	float q1q1 = q1 * q1;
-	float q1q2 = q1 * q2;
-	float q1q3 = q1 * q3;
-	float q1q4 = q1 * q4;
-	float q2q2 = q2 * q2;
-	float q2q3 = q2 * q3;
-	float q2q4 = q2 * q4;
-	float q3q3 = q3 * q3;
-	float q3q4 = q3 * q4;
-	float q4q4 = q4 * q4;
+	//float _2q1mx;
+	//float _2q1my;
+	//float _2q1mz;
+	//float _2q2mx;
+	//float _4bx;
+	//float _4bz;
+	//float _2q1 = 2.0f * q1;
+	//float _2q2 = 2.0f * q2;
+	//float _2q3 = 2.0f * q3;
+	//float _2q4 = 2.0f * q4;
+	//float _2q1q3 = 2.0f * q1 * q3;
+	//float _2q3q4 = 2.0f * q3 * q4;
+	//float q1q1 = q1 * q1;
+	//float q1q2 = q1 * q2;
+	//float q1q3 = q1 * q3;
+	//float q1q4 = q1 * q4;
+	//float q2q2 = q2 * q2;
+	//float q2q3 = q2 * q3;
+	//float q2q4 = q2 * q4;
+	//float q3q3 = q3 * q3;
+	//float q3q4 = q3 * q4;
+	//float q4q4 = q4 * q4;
 
 	// Normalise accelerometer measurement
 	norm = sqrt(ax * ax + ay * ay + az * az);
@@ -635,34 +638,34 @@ void LinearKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, float
 	mz *= norm;
 
 	// Reference direction of Earth's magnetic field
-	_2q1mx = 2.0f * q1 * mx;
-	_2q1my = 2.0f * q1 * my;
-	_2q1mz = 2.0f * q1 * mz;
-	_2q2mx = 2.0f * q2 * mx;
-	hx = mx * q1q1 - _2q1my * q4 + _2q1mz * q3 + mx * q2q2 + _2q2 * my * q3 + _2q2 * mz * q4 - mx * q3q3 - mx * q4q4;
-	hy = _2q1mx * q4 + my * q1q1 - _2q1mz * q2 + _2q2mx * q3 - my * q2q2 + my * q3q3 + _2q3 * mz * q4 - my * q4q4;
-	_2bx = sqrt(hx * hx + hy * hy);
-	_2bz = -_2q1mx * q3 + _2q1my * q2 + mz * q1q1 + _2q2mx * q4 - mz * q2q2 + _2q3 * my * q4 - mz * q3q3 + mz * q4q4;
-	_4bx = 2.0f * _2bx;
-	_4bz = 2.0f * _2bz;
+	//_2q1mz = 2.0f * q1 * mz;
+	//_2q1mx = 2.0f * q1 * mx;
+	//_2q1my = 2.0f * q1 * my;
+	//_2q2mx = 2.0f * q2 * mx;
+	//hx = mx * q1q1 - _2q1my * q4 + _2q1mz * q3 + mx * q2q2 + _2q2 * my * q3 + _2q2 * mz * q4 - mx * q3q3 - mx * q4q4;
+	//hy = _2q1mx * q4 + my * q1q1 - _2q1mz * q2 + _2q2mx * q3 - my * q2q2 + my * q3q3 + _2q3 * mz * q4 - my * q4q4;
+	//_2bx = sqrt(hx * hx + hy * hy);
+	//_2bz = -_2q1mx * q3 + _2q1my * q2 + mz * q1q1 + _2q2mx * q4 - mz * q2q2 + _2q3 * my * q4 - mz * q3q3 + mz * q4q4;
+	//_4bx = 2.0f * _2bx;
+	//_4bz = 2.0f * _2bz;
 
 	// Gradient decent algorithm corrective step
-	s1 = -_2q3 * (2.0f * q2q4 - _2q1q3 - ax) + _2q2 * (2.0f * q1q2 + _2q3q4 - ay) - _2bz * q3 * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (-_2bx * q4 + _2bz * q2) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + _2bx * q3 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
-	s2 = _2q4 * (2.0f * q2q4 - _2q1q3 - ax) + _2q1 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * q2 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az) + _2bz * q4 * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (_2bx * q3 + _2bz * q1) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + (_2bx * q4 - _4bz * q2) * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
-	s3 = -_2q1 * (2.0f * q2q4 - _2q1q3 - ax) + _2q4 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * q3 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az) + (-_4bx * q3 - _2bz * q1) * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (_2bx * q2 + _2bz * q4) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + (_2bx * q1 - _4bz * q3) * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
-	s4 = _2q2 * (2.0f * q2q4 - _2q1q3 - ax) + _2q3 * (2.0f * q1q2 + _2q3q4 - ay) + (-_4bx * q4 + _2bz * q2) * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (-_2bx * q1 + _2bz * q3) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + _2bx * q2 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
-	norm = sqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4);    // normalise step magnitude
-	norm = 1.0f/norm;
-	s1 *= norm;
-	s2 *= norm;
-	s3 *= norm;
-	s4 *= norm;
+	//s1 = -_2q3 * (2.0f * q2q4 - _2q1q3 - ax) + _2q2 * (2.0f * q1q2 + _2q3q4 - ay) - _2bz * q3 * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (-_2bx * q4 + _2bz * q2) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + _2bx * q3 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
+	//s2 = _2q4 * (2.0f * q2q4 - _2q1q3 - ax) + _2q1 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * q2 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az) + _2bz * q4 * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (_2bx * q3 + _2bz * q1) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + (_2bx * q4 * q2) * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
+	//s3 = -_2q1 * (2.0f * q2q4 - _2q1q3 - ax) + _2q4 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * q3 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az) + (-_4bx * q3 - _2bz * q1) * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (_2bx * q2 + _2bz * q4) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + (_2bx * q1 * q3) * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
+	//s4 = _2q2 * (2.0f * q2q4 - _2q1q3 - ax) + _2q3 * (2.0f * q1q2 + _2q3q4 - ay) + (-_4bx * q4 + _2bz * q2) * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (-_2bx * q1 + _2bz * q3) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + _2bx * q2 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
+	//norm = sqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4);    // normalise step magnitude
+	//norm = 1.0f/norm;
+	//s1 *= norm;
+	//s2 *= norm;
+	//s3 *= norm;
+	//s4 *= norm;
 
 	// Compute rate of change of quaternion
-	qDot1 = 0.5f * (-q2 * gx - q3 * gy - q4 * gz) - beta * s1;
-	qDot2 = 0.5f * (q1 * gx + q3 * gz - q4 * gy) - beta * s2;
-	qDot3 = 0.5f * (q1 * gy - q2 * gz + q4 * gx) - beta * s3;
-	qDot4 = 0.5f * (q1 * gz + q2 * gy - q3 * gx) - beta * s4;
+	qDot1 = 0.5f * (-q2 * gx - q3 * gy - q4 * gz);
+	qDot2 = 0.5f * (q1 * gx + q3 * gz - q4 * gy);
+	qDot3 = 0.5f * (q1 * gy - q2 * gz + q4 * gx);
+	qDot4 = 0.5f * (q1 * gz + q2 * gy - q3 * gx);
 
 	// Integrate to yield quaternion
 	q1 += qDot1 * deltat;

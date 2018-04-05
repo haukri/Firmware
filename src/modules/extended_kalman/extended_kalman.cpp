@@ -264,7 +264,7 @@ void ExtendedKalman::run()
 	float yaw = 0;
 
 	float dt = 0.2;
-	float last_kalman_dt = 0;
+	//float last_kalman_dt = 0;
 
 	bool flying = false;
 
@@ -361,17 +361,17 @@ void ExtendedKalman::run()
 							PX4_INFO("GPS Check success");
 							map_projection_init_timestamped(&mp_ref, ref_gps.lat*10e-8f, ref_gps.lon*10e-8f, hrt_absolute_time());
 							first_gps_run = false;
-							last_kalman_dt = hrt_absolute_time();
+							//last_kalman_dt = hrt_absolute_time();
 						}
 					}
 					else if(flying) {
 						float x = 0;
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
-						float time_now = hrt_absolute_time();
+						//float time_now = hrt_absolute_time();
 						dt = 0.002; //(time_now - last_kalman_dt) / 1000000.0;
 
-						last_kalman_dt = time_now;
+						//last_kalman_dt = time_now;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
 						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
 
@@ -472,7 +472,7 @@ void ExtendedKalman::run()
 
 						//PX4_INFO("EKF:\t%8.4f",
 						//(double)xhat(11,0));
-
+						/*
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
 							.x = xhat(9,0),
@@ -491,8 +491,8 @@ void ExtendedKalman::run()
 						} else {
 							orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
 						}
-
-						//publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
+						*/
+						publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
 					}
 				}
 			}
@@ -512,10 +512,10 @@ void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, fl
 	std::cout << act_out->output[0] << std::endl;
 	//PX4_INFO("Act:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3] );
 
-	tx = b*l*(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
-	ty = b*l*(pow(act_out->output[2], 2) - pow(act_out->output[3], 2));;
-	tz = d*(pow(act_out->output[2], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[1], 2));
-	ft = b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
+	tx = b*l*((float)pow(act_out->output[1], 2) - (float)pow(act_out->output[0], 2));
+	ty = b*l*((float)pow(act_out->output[2], 2) - (float)pow(act_out->output[3], 2));;
+	tz = d*((float)pow(act_out->output[2], 2) + (float)pow(act_out->output[3], 2) - (float)pow(act_out->output[0], 2) - (float)pow(act_out->output[1], 2));
+	ft = b*((float)pow(act_out->output[0], 2) + (float)pow(act_out->output[1], 2) + (float)pow(act_out->output[2], 2) + (float)pow(act_out->output[3], 2));
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 }
 
