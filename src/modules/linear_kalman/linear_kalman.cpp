@@ -336,22 +336,7 @@ void LinearKalman::run()
 				// Wikipedia's method for quaternion -> Euler angle conversion
 				roll = atan2f(2.0f * (q[0] * q[1] + q[2] * q[3]) ,1.0f * 2.0f * (q[1] * q[1] + q[2] * q[2]));
 				pitch = asinf(2.0f * (q[0] * q[2] - q[3] * q[1]));
-				yaw = atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0 * (q[2] * q[2] + q[3] * q[3])):
-
-
-				/*extended_kalman_s extended_kalman = {
-					.timestamp = hrt_absolute_time(),
-					.q[0] = roll,
-					.q[1] = pitch,
-					.q[2] = yaw
-				};
-
-				if (extended_kalman_pub == nullptr) {
-					extended_kalman_pub = orb_advertise_queue(ORB_ID(extended_kalman), &extended_kalman, 10);
-				} else {
-					orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
-				}*/
-
+				yaw = atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]));
 				
 				struct actuator_outputs_s act_out;
 				orb_check(act_out_sub_fd, &updated);
@@ -390,17 +375,8 @@ void LinearKalman::run()
 						//float time_now = hrt_absolute_time();
 						dt = 0.002; //(time_now - last_kalman_dt) / 1000000.0;
 
-						//last_kalman_dt = time_now;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
 						// float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
-
-						/*
-							K = P * H' / R;
-							xhatdot = xhatdot + K * (z - H * xhat);
-							xhat = xhat + xhatdot * dt;
-							Pdot = F * P + P * F' + Q - P * H' / R * H * P;
-							P = P + Pdot * dt;
-						*/
 
 						matrix::Matrix<float, 12, 12> F;
 						matrix::Matrix<float, 12, 1> xhatdot;
