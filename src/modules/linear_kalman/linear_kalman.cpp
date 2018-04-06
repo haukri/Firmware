@@ -327,12 +327,17 @@ void LinearKalman::run()
 				q[1] = att.q[1];
 				q[2] = att.q[2];
 				q[3] = att.q[3];
-					
-				roll  = (float)atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]);// + dist(generator);
-				pitch = (float)-asin(2.0f * (-q[0] * -q[2] - q[1] * q[3]));// + dist(generator);
-				yaw   = (float)-atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]);// + dist(generator);
-
 				
+				// Arduino solution method for quaternion -> Euler angle conversion
+				//roll  = (float)atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]);// + dist(generator);
+				//pitch = (float)-asin(2.0f * (-q[0] * -q[2] - q[1] * q[3]));// + dist(generator);
+				//yaw   = (float)-atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]);// + dist(generator);
+				
+				// Wikipedia's method for quaternion -> Euler angle conversion
+				roll = atan2f(2.0f * (q[0] * q[1] + q[2] * q[3]) ,1.0f * 2.0f * (q[1] * q[1] + q[2] * q[2]));
+				pitch = asinf(2.0f * (q[0] * q[2] - q[3] * q[1]));
+				yaw = atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0 * (q[2] * q[2] + q[3] * q[3])):
+
 
 				/*extended_kalman_s extended_kalman = {
 					.timestamp = hrt_absolute_time(),
