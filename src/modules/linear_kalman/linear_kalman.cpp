@@ -335,7 +335,7 @@ void LinearKalman::run()
 				
 				// Wikipedia's method for quaternion -> Euler angle conversion
 				roll = atan2f(2.0f * (q[0] * q[1] + q[2] * q[3]) ,1.0f * 2.0f * (q[1] * q[1] + q[2] * q[2]));
-				pitch = asinf(2.0f * (q[0] * q[2] - q[3] * q[1]));
+				pitch = asinf(2.0f * (q[0] * q[2] - q[3] * q[1])) - 0.034906585f; // Subtracted by 0.034906585 due to magnetic declenation in Odense
 				yaw = atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]));
 				
 				struct actuator_outputs_s act_out;
