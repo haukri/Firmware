@@ -509,7 +509,7 @@ void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, fl
 	float l = 0.25;
 	float d = 1e-6;
 
-	std::cout << act_out->output[0] << std::endl;
+	// std::cout << act_out->output[0] << std::endl;
 	//PX4_INFO("Act:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3] );
 
 	tx = b*l*(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
