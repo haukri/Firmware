@@ -270,7 +270,7 @@ void LinearKalman::run()
 	float yaw = 0;
 
 	float dt = 0.2;
-	float last_kalman_dt = 0;
+	//float last_kalman_dt = 0;
 
 	bool flying = false;
 
@@ -282,7 +282,7 @@ void LinearKalman::run()
 	float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion for Magwick's filter
 
 	std::default_random_engine generator;
-    std::normal_distribution<double> dist(0.0, 0.1);
+    std::normal_distribution<float> dist(0.0, 0.1);
 
 	matrix::Matrix<float, 12, 6> K;
 	double observer_beta = 150;
@@ -356,36 +356,29 @@ void LinearKalman::run()
 				orb_copy(ORB_ID(vehicle_local_position), local_pos_sub_fd, &loc_pos);
 
 				// Read and scale gyroscope, accelerometer and magnetometer data
-				
-				// process_IMU_data(&raw_imu, q, dt);
+				//struct sensor_combined_s raw_imu;
+				//orb_copy(ORB_ID(sensor_combined), sensor_sub_fd, &raw_imu);
+				//process_IMU_data(&raw_imu, q, dt);
 
 				q[0] = att.q[0];
 				q[1] = att.q[1];
 				q[2] = att.q[2];
 				q[3] = att.q[3];
 
+				// Arduino solution method for quaternion -> Euler angle conversion
 				roll = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]) + dist(generator);
 				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3])) + dist(generator);
 				yaw   = atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]) + dist(generator);
 				
+				// Wikipedia's method for quaternion -> Euler angle conversion
+				// roll = atan2f(2.0f * (q[0] * q[1] + q[2] * q[3]) ,1.0f * 2.0f * (q[1] * q[1] + q[2] * q[2]));
+				// pitch = asinf(2.0f * (q[0] * q[2] - q[3] * q[1])) - 0.034906585f; // Subtracted by 0.034906585 due to magnetic declenation in Odense
+				// yaw = atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]));
+
 				roll += 3.14159;
 				if(roll > 3.14159) {
 					roll = -2*3.14159 + roll;
 				}
-
-				/*extended_kalman_s extended_kalman = {
-					.timestamp = hrt_absolute_time(),
-					.q[0] = roll,
-					.q[1] = pitch,
-					.q[2] = yaw
-				};
-
-				if (extended_kalman_pub == nullptr) {
-					extended_kalman_pub = orb_advertise_queue(ORB_ID(extended_kalman), &extended_kalman, 10);
-				} else {
-					orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
-				}*/
-
 				
 				struct actuator_outputs_s act_out;
 				orb_check(act_out_sub_fd, &updated);
@@ -414,27 +407,18 @@ void LinearKalman::run()
 							PX4_INFO("GPS Check success");
 							map_projection_init_timestamped(&mp_ref, ref_gps.lat*10e-8f, ref_gps.lon*10e-8f, hrt_absolute_time());
 							first_gps_run = false;
-							last_kalman_dt = hrt_absolute_time();
+							//last_kalman_dt = hrt_absolute_time();
 						}
 					}
 					else if(flying) {
 						float x = 0;
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
-						float time_now = hrt_absolute_time();
+						//float time_now = hrt_absolute_time();
 						dt = 0.0005; //(time_now - last_kalman_dt) / 1000000.0;
 
-						last_kalman_dt = time_now;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
 						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
-
-						/*
-							K = P * H' / R;
-							xhatdot = xhatdot + K * (z - H * xhat);
-							xhat = xhat + xhatdot * dt;
-							Pdot = F * P + P * F' + Q - P * H' / R * H * P;
-							P = P + Pdot * dt;
-						*/
 
 						matrix::Matrix<float, 12, 12> F;
 						matrix::Matrix<float, 12, 1> xhatdot;
@@ -532,6 +516,7 @@ void LinearKalman::run()
 						//PX4_INFO("EKF:\t%8.4f",
 						//(double)xhat(11,0));
 
+						/*
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
 							.x = xhat(9,0),
@@ -550,8 +535,9 @@ void LinearKalman::run()
 						} else {
 							orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
 						}
+						*/
 
-						//publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
+						publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
 					}
 				}
 			}
@@ -570,10 +556,10 @@ void LinearKalman::update_model_inputs(struct actuator_outputs_s * act_out, floa
 
 	//PX4_INFO("Act:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3] );
 
-	tx = b*l*(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
-	ty = b*l*(pow(act_out->output[2], 2) - pow(act_out->output[3], 2));;
-	tz = d*(pow(act_out->output[2], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[1], 2));
-	ft = b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
+	tx = b*l*(float)(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
+	ty = b*l*(float)(pow(act_out->output[2], 2) - pow(act_out->output[3], 2));;
+	tz = d*(float)(pow(act_out->output[2], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[1], 2));
+	ft = b*(float)(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 }
 
@@ -623,9 +609,9 @@ void LinearKalman::process_IMU_data(struct sensor_combined_s *raw_imu, float q[]
 	
 	MadgwickQuaternionUpdate(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], mag_scaled[0], mag_scaled[1], mag_scaled[2], dt);   
 		
-	// roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
-	// pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
-	// yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
+	//roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
+	//pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
+	//yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
 	
 	// pitch *= 180.0f / 3.14159f;
 	// yaw   *= 180.0f / 3.14159f - 2.0f; // Declination at Odense, Denmark 2 degrees 15/03/2018
@@ -636,7 +622,7 @@ void LinearKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, float
 {
 	float q1 = q[0], q2 = q[1], q3 = q[2], q4 = q[3];   // short name local variable for readability
 	float norm;
-	float hx, hy, _2bx, _2bz;
+	float hy, hx, _2bx, _2bz;
 	float s1, s2, s3, s4;	
 	float qDot1, qDot2, qDot3, qDot4;
 
@@ -705,10 +691,10 @@ void LinearKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, float
 	s4 *= norm;
 
 	// Compute rate of change of quaternion
-	qDot1 = 0.5f * (-q2 * gx - q3 * gy - q4 * gz) - beta * s1;
-	qDot2 = 0.5f * (q1 * gx + q3 * gz - q4 * gy) - beta * s2;
-	qDot3 = 0.5f * (q1 * gy - q2 * gz + q4 * gx) - beta * s3;
-	qDot4 = 0.5f * (q1 * gz + q2 * gy - q3 * gx) - beta * s4;
+	qDot1 = 0.5f * (-q2 * gx - q3 * gy - q4 * gz);
+	qDot2 = 0.5f * (q1 * gx + q3 * gz - q4 * gy);
+	qDot3 = 0.5f * (q1 * gy - q2 * gz + q4 * gx);
+	qDot4 = 0.5f * (q1 * gz + q2 * gy - q3 * gx);
 
 	// Integrate to yield quaternion
 	q1 += qDot1 * deltat;
