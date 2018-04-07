@@ -366,18 +366,18 @@ void LinearKalman::run()
 				q[3] = att.q[3];
 
 				// Arduino solution method for quaternion -> Euler angle conversion
-				roll = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]) + dist(generator);
-				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3])) + dist(generator);
-				yaw   = atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]) + dist(generator);
+				roll = atan2f(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]) + dist(generator);
+				pitch = -asinf(2.0f * (-q[0] * -q[2] - q[1] * q[3])) + dist(generator);
+				yaw   = atan2f(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]) + dist(generator);
 				
 				// Wikipedia's method for quaternion -> Euler angle conversion
 				// roll = atan2f(2.0f * (q[0] * q[1] + q[2] * q[3]) ,1.0f * 2.0f * (q[1] * q[1] + q[2] * q[2]));
 				// pitch = asinf(2.0f * (q[0] * q[2] - q[3] * q[1])) - 0.034906585f; // Subtracted by 0.034906585 due to magnetic declenation in Odense
 				// yaw = atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]));
 
-				roll += 3.14159;
-				if(roll > 3.14159) {
-					roll = -2*3.14159 + roll;
+				roll += 3.14159f;
+				if(roll > 3.14159f) {
+					roll = -2.0f*3.14159f + roll;
 				}
 				
 				struct actuator_outputs_s act_out;
