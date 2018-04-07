@@ -197,7 +197,7 @@ void LinearKalman::run()
 	PX4_INFO("asdfasdfasdf!");
 
 	/* subscribe to sensor_combined topic */
-	//int sensor_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
+	int sensor_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
 
 	/* subscribe to vehicle_gps_position topic */
 	int gps_sub_fd = orb_subscribe(ORB_ID(vehicle_gps_position));
@@ -218,6 +218,7 @@ void LinearKalman::run()
 
 	int error_counter = 0;
   	bool updated = false;
+	bool sensor_updated = false;
  	bool first_gps_run = true;
   	struct vehicle_gps_position_s ref_gps;
   	struct map_projection_reference_s mp_ref = {};
@@ -283,6 +284,34 @@ void LinearKalman::run()
 	std::default_random_engine generator;
     std::normal_distribution<float> dist(0.0, 0.1);
 
+	matrix::Matrix<float, 12, 6> K;
+	double observer_beta = 150;
+	P(0,0) = 2.4000 * observer_beta;
+	P(0,3) = -0.8000 * observer_beta;
+	P(1,1) = 2.4000 * observer_beta;
+	P(1,4) = -0.8000 * observer_beta;
+	P(2,2) = 2.4000 * observer_beta;
+	P(2,5) = -0.8000 * observer_beta;
+	P(3,0) = -0.8000 * observer_beta;
+	P(3,3) = 1.6000 * observer_beta;
+	P(4,1) = -0.8000 * observer_beta;
+	P(4,4) = 1.6000 * observer_beta;
+	P(5,2) = -0.8000 * observer_beta;
+	P(5,5) = 1.6000 * observer_beta;
+	P(6,6) = 0.8000 * observer_beta;
+	P(6,9) = 0.4000 * observer_beta;
+	P(7,7) = 0.8000 * observer_beta;
+	P(7,10) = 0.4000 * observer_beta;
+	P(8,8) = 0.8000 * observer_beta;
+	P(8,11) = 0.4000 * observer_beta;
+	P(9,6) = 0.4000 * observer_beta;
+	P(9,9) = 1.2000 * observer_beta;
+	P(10,7) = 0.4000 * observer_beta;
+	P(10,10) = 1.2000 * observer_beta;
+	P(11,8) = 0.4000 * observer_beta;
+	P(11,11) = 1.2000 * observer_beta;
+	K = P*HT;
+
 	while(!should_exit()) {
 		/* wait for sensor update of 1 file descriptor for 1000 ms (1 second) */
 		int poll_ret = px4_poll(fds, 1, 1000);
@@ -307,13 +336,21 @@ void LinearKalman::run()
 				/* obtained data for the first file descriptor */
 				struct vehicle_attitude_s att;
 				/* copy sensors raw data into local buffer */
-				orb_copy(ORB_ID(vehicle_attitude), attitude_sub_fd, &att);
+				
+				orb_check(act_out_sub_fd, &sensor_updated);
+				if(sensor_updated) {
+					orb_copy(ORB_ID(vehicle_attitude), attitude_sub_fd, &att);
+				}
+
 				
 				/*PX4_INFO("Raw Accelerometer:\t%8.4f\t%8.4f\t%8.4f",
 					 (double)raw_imu.accelerometer_m_s2[0],
 					 (double)raw_imu.accelerometer_m_s2[1],
 					 (double)raw_imu.accelerometer_m_s2[2]);
         		*/
+
+				struct sensor_combined_s raw_imu;
+				orb_copy(ORB_ID(sensor_combined), sensor_sub_fd, &raw_imu);
 
 				struct vehicle_local_position_s loc_pos;
 				orb_copy(ORB_ID(vehicle_local_position), local_pos_sub_fd, &loc_pos);
@@ -327,16 +364,21 @@ void LinearKalman::run()
 				q[1] = att.q[1];
 				q[2] = att.q[2];
 				q[3] = att.q[3];
-				
+
 				// Arduino solution method for quaternion -> Euler angle conversion
-				//roll  = (float)atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]);// + dist(generator);
-				//pitch = (float)-asin(2.0f * (-q[0] * -q[2] - q[1] * q[3]));// + dist(generator);
-				//yaw   = (float)-atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]);// + dist(generator);
+				roll = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]) + dist(generator);
+				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3])) + dist(generator);
+				yaw   = atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]) + dist(generator);
 				
 				// Wikipedia's method for quaternion -> Euler angle conversion
-				roll = atan2f(2.0f * (q[0] * q[1] + q[2] * q[3]) ,1.0f * 2.0f * (q[1] * q[1] + q[2] * q[2]));
-				pitch = asinf(2.0f * (q[0] * q[2] - q[3] * q[1])) - 0.034906585f; // Subtracted by 0.034906585 due to magnetic declenation in Odense
-				yaw = atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]));
+				// roll = atan2f(2.0f * (q[0] * q[1] + q[2] * q[3]) ,1.0f * 2.0f * (q[1] * q[1] + q[2] * q[2]));
+				// pitch = asinf(2.0f * (q[0] * q[2] - q[3] * q[1])) - 0.034906585f; // Subtracted by 0.034906585 due to magnetic declenation in Odense
+				// yaw = atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]));
+
+				roll += 3.14159;
+				if(roll > 3.14159) {
+					roll = -2*3.14159 + roll;
+				}
 				
 				struct actuator_outputs_s act_out;
 				orb_check(act_out_sub_fd, &updated);
@@ -373,10 +415,10 @@ void LinearKalman::run()
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
 						//float time_now = hrt_absolute_time();
-						dt = 0.002; //(time_now - last_kalman_dt) / 1000000.0;
+						dt = 0.0005; //(time_now - last_kalman_dt) / 1000000.0;
 
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
-						// float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
+						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
 
 						matrix::Matrix<float, 12, 12> F;
 						matrix::Matrix<float, 12, 1> xhatdot;
@@ -385,12 +427,8 @@ void LinearKalman::run()
 						xhatdot.setZero();
 						z.setZero();
 
-						z(0,0) = roll;
-						z(1,0) = pitch;
-						z(2,0) = yaw;
-						z(3,0) = loc_pos.x + dist(generator);
-						z(4,0) = loc_pos.y + dist(generator);
-						z(5,0) = loc_pos.z + dist(generator);
+						
+
 
 						F(0,0) = xhat(4,0)*xhat(1,0);
 						F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0);
@@ -453,18 +491,28 @@ void LinearKalman::run()
 						xhatdot(9,0) = xhat(8,0)*(xhat(0,0)*xhat(2,0) + xhat(1,0)) - xhat(7,0)*(xhat(2,0) - xhat(0,0)*xhat(1,0)) + xhat(6,0);
 						xhatdot(10,0) = xhat(7,0)*(1 + xhat(0,0)*xhat(2,0)*xhat(1,0)) - xhat(8,0)*(xhat(0,0) - xhat(2,0)*xhat(1,0)) + xhat(6,0)*xhat(2,0);
 						xhatdot(11,0) = xhat(8,0) - xhat(6,0)*xhat(1,0) + xhat(7,0)*xhat(0,0);
-
-						matrix::Matrix<float, 12, 6> K;
-						matrix::Matrix<float, 12, 12> Pdot;
-						matrix::Matrix<float, 12, 6> debug;
 						
-						K = P * HT * R_inv;
-						debug = P * HT;
-						xhatdot = xhatdot + (K * (z - H * xhat));
-						xhat = xhat + (xhatdot * dt);
-						Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
-						P = P + Pdot * dt;
+						if(sensor_updated) {
+							sensor_updated = false;
+							z(0,0) = roll;
+							z(1,0) = pitch;
+							z(2,0) = yaw;
+							z(3,0) = x; //loc_pos.x + dist(generator);
+							z(4,0) = y; //loc_pos.y + dist(generator);
+							z(5,0) = altitude; //loc_pos.z + dist(generator);
+							xhatdot = xhatdot + (K * (z - H * xhat));
+							xhat = xhat + (xhatdot * dt);
+						}
 
+						
+
+						if(xhat(11,0) > 0) {
+							xhat(11,0) = 0;
+						}
+
+						//Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
+						//P = P + Pdot * dt;
+						
 						//PX4_INFO("EKF:\t%8.4f",
 						//(double)xhat(11,0));
 
@@ -474,12 +522,12 @@ void LinearKalman::run()
 							.x = xhat(9,0),
 							.y = xhat(10,0),
 							.z = xhat(11,0),
-							.x_gps = tx,
-							.y_gps = ty,
-							.z_gps = tz,
-							.roll = roll,
-							.pitch = pitch,
-							.yaw = yaw
+							.x_gps = roll,
+							.y_gps = pitch,
+							.z_gps = yaw,
+							.roll = xhat(0,0),
+							.pitch = xhat(1,0),
+							.yaw = xhat(2,0)
 						};
 
 						if (extended_kalman_pub == nullptr) {
