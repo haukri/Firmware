@@ -105,22 +105,27 @@ for q in zip(attitude['q[0]'], attitude['q[1]'], attitude['q[2]'], attitude['q[3
     pitch.append(-math.asin(2.0 * (-q[0] * -q[2] - q[1] * q[3])))
     yaw.append(math.atan2(2.0 * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]))
 
-plt.scatter(kalman['timestamp'], kalman['pitch'], color='b')
-plt.scatter(attitude['timestamp'], pitch, color='red')
-plt.scatter(kalman['timestamp'], kalman['y_gps'], color='g')
+# plt.scatter(kalman['timestamp'], kalman['pitch'], color='b')
+# plt.scatter(kalman['timestamp'], kalman['y_gps'], color='g')
+plt.scatter(kalman['timestamp'], kalman['x'], color='lightseagreen')
+plt.scatter(attitude['timestamp'], roll, color='r')
+# plt.scatter(kalman['timestamp'], kalman['y_gps'], color='g')
 
-print(actuators['timestamp'])
 
+# plt.scatter(attitude['timestamp'], pitch, color='lightseagreen')
+# plt.scatter(kalman['timestamp'], kalman['x_gps'], color='r')
+# plt.scatter(kalman['timestamp'], kalman['y_gps'], color='g')
+# plt.scatter(kalman['timestamp'], kalman['z_gps'], color='b')
 
 # axes = plt.gca()
 # axes.set_ylim([-10, 50])
 
 # plt.scatter(trueatt['timestamp'], truepitch, color='r')
 
-# plt.scatter(kalman['timestamp'], kalman['x'], color='r')
+# plt.scatter(kalman['timestamp'], kalman['z'], color='r')
 # plt.scatter(kalman['timestamp'], kalman['x_gps'], color='g')
-# plt.scatter(pos['timestamp'], pos['x'], color='b')
-# plt.scatter(truepos['timestamp'], truepos['x'], color='lightseagreen')
+# plt.scatter(pos['timestamp'], pos['z'], color='b')
+# plt.scatter(truepos['timestamp'], truepos['z'], color='lightseagreen')
 
 # plt.scatter(sensors['timestamp'], sensors['gyro_rad[1]'], color='g')
 # plt.scatter(sensors['timestamp'], sensors['accelerometer_m_s2[1]'], color='lightseagreen')
@@ -134,10 +139,10 @@ print(actuators['timestamp'])
 # plt.scatter(kalman['timestamp'], kalman['z_gps'], color='brown')
 
 
-# plt.plot(actuators['output[0]'])
-# plt.plot(actuators['output[1]'])
-# plt.plot(actuators['output[2]'])
-# plt.plot(actuators['output[3]'])
+# plt.plot(actuators['output[0]'], color='b')
+# plt.plot(actuators['output[1]'], color='g')
+# plt.plot(actuators['output[2]'], color='r')
+# plt.plot(actuators['output[3]'], color='lightseagreen')
 
 # plt.plot(kalman['x_gps'], color='purple')
 

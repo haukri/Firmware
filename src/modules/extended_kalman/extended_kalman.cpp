@@ -463,11 +463,13 @@ void ExtendedKalman::run()
 						matrix::Matrix<float, 12, 12> Pdot;
 						matrix::Matrix<float, 12, 6> debug;
 						
-						K = P * HT * R_inv;
-						debug = P * HT;
-						xhatdot = xhatdot + (K * (z - H * xhat));
-						xhat = xhat + (xhatdot * dt);
+						// Predictive State
 						Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
+						xhatdot = xhatdot + (K * (z - H * xhat));
+
+						// Corrective State
+						K = P * HT * R_inv;
+						xhat = xhat + (xhatdot * dt);
 						P = P + Pdot * dt;
 
 						//PX4_INFO("EKF:\t%8.4f",
