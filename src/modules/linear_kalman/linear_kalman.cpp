@@ -516,18 +516,17 @@ void LinearKalman::run()
 						//PX4_INFO("EKF:\t%8.4f",
 						//(double)xhat(11,0));
 
-						/*
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
 							.x = xhat(9,0),
 							.y = xhat(10,0),
 							.z = xhat(11,0),
-							.x_gps = roll,
-							.y_gps = pitch,
-							.z_gps = yaw,
 							.roll = xhat(0,0),
 							.pitch = xhat(1,0),
-							.yaw = xhat(2,0)
+							.yaw = xhat(2,0),
+							.x_gps = roll,
+							.y_gps = pitch,
+							.z_gps = yaw
 						};
 
 						if (extended_kalman_pub == nullptr) {
@@ -535,9 +534,7 @@ void LinearKalman::run()
 						} else {
 							orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
 						}
-						*/
-
-						publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
+						
 					}
 				}
 			}
