@@ -263,6 +263,10 @@ void ExtendedKalman::run()
 	float pitch = 0;
 	float yaw = 0;
 
+	float pos_correction[3] = {0.0f, 0.0f, 0.0f};
+	float velocity[3] = {0.0f, 0.0f, 0.0f};
+	float position[3] = {0.0f, 0.0f, 0.0f};
+
 	float dt = 0.2;
 	//float last_kalman_dt = 0;
 
@@ -347,6 +351,7 @@ void ExtendedKalman::run()
 
 				orb_check(gps_sub_fd, &updated);
 
+
 				if (true) {
 					if(first_gps_run) {
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &ref_gps);
@@ -375,6 +380,22 @@ void ExtendedKalman::run()
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
 						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
 
+						// Velocity extrapolation on GPS position (additive)
+						if (updated){ 
+							velocity[0] = raw_gps.vel_n_m_s; velocity[1] = raw_gps.vel_e_m_s; velocity[2] = raw_gps.vel_d_m_s;
+							//velocity[0] = 0.0f; velocity[1] = 0.0f; velocity[2] = 0.0f;
+							position[0] = 0.0f; position[1] = 0.0f; position[2] = 0.0f;
+						}
+						acc_position_extrapolation(&raw_imu, pos_correction, velocity, position, roll, pitch, yaw);
+						x += pos_correction[0];
+						y += pos_correction[1];
+						altitude += pos_correction[2];
+						
+						PX4_INFO("Corrections:\t%8.4f\t%8.4f\t%8.4f",
+						(double)pos_correction[0],
+						(double)pos_correction[1],
+						(double)pos_correction[2]);
+
 						/*
 							K = P * H' / R;
 							xhatdot = xhatdot + K * (z - H * xhat);
@@ -396,6 +417,8 @@ void ExtendedKalman::run()
 						z(3,0) = x;
 						z(4,0) = y;
 						z(5,0) = altitude;
+
+						
 
 						F(0,0) = xhat(4,0)*xhat(1,0);
 						F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0);
@@ -474,18 +497,19 @@ void ExtendedKalman::run()
 
 						//PX4_INFO("EKF:\t%8.4f",
 						//(double)xhat(11,0));
-						/*
+						
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
 							.x = xhat(9,0),
 							.y = xhat(10,0),
 							.z = xhat(11,0),
-							.x_gps = x,
-							.y_gps = y,
-							.z_gps = altitude,
 							.roll = roll,
 							.pitch = pitch,
-							.yaw = yaw
+							.yaw = yaw,
+							.x_gps = x,
+							.y_gps = y,
+							.z_gps = altitude
+
 						};
 
 						if (extended_kalman_pub == nullptr) {
@@ -493,8 +517,8 @@ void ExtendedKalman::run()
 						} else {
 							orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
 						}
-						*/
-						publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
+						
+						
 					}
 				}
 			}
@@ -549,6 +573,27 @@ void ExtendedKalman::publish_extended_kalman(orb_advert_t &extended_kalman_pub, 
 	} else {
 		orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
 	}
+}
+
+void ExtendedKalman::acc_position_extrapolation(struct sensor_combined_s *raw_imu, float pos_correction[], float velocity[], float position[], float roll, float pitch, float yaw){
+	//float newVelocity[3] = {0.0f, 0.0f, 0.0f};
+	float An = raw_imu->accelerometer_m_s2[0];
+	float Ae = raw_imu->accelerometer_m_s2[1];
+	float Ad = raw_imu->accelerometer_m_s2[2] - 9.8f;
+	float dt = (float)raw_imu->accelerometer_integral_dt / 1000000;
+	velocity[0] = velocity[0] + An * dt;
+	velocity[1] = velocity[1] + Ae * dt; 
+	velocity[2] = velocity[2] + Ad * dt;
+
+	//float newPosition[3] = {0.0f, 0.0f, 0.0f};
+	position[0] = position[0] + velocity[0] * dt + (raw_imu->accelerometer_m_s2[0] * dt*dt) / 2;
+	position[1] = position[1] + velocity[1] * dt + (raw_imu->accelerometer_m_s2[0] * dt*dt) / 2;
+	position[2] = position[2] + velocity[2] * dt + ((raw_imu->accelerometer_m_s2[0] + + 9.8f) * dt*dt) / 2;
+
+	pos_correction[0] = position[0];
+	pos_correction[1] = position[1];
+	pos_correction[2] = position[2];
+
 }
 
 void ExtendedKalman::process_IMU_data(struct sensor_combined_s *raw_imu, float q[], float dt){

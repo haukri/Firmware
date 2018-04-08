@@ -383,18 +383,18 @@ void LinearKalman::run()
 				q[3] = att.q[3];
 
 				// Arduino solution method for quaternion -> Euler angle conversion
-				roll = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]) + dist(generator);
-				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3])) + dist(generator);
-				yaw   = atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]) + dist(generator);
+				roll = atan2f(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]) + dist(generator);
+				pitch = -asinf(2.0f * (-q[0] * -q[2] - q[1] * q[3])) + dist(generator);
+				yaw   = atan2f(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]) + dist(generator);
 				
 				// Wikipedia's method for quaternion -> Euler angle conversion
 				// roll = atan2f(2.0f * (q[0] * q[1] + q[2] * q[3]) ,1.0f * 2.0f * (q[1] * q[1] + q[2] * q[2]));
 				// pitch = asinf(2.0f * (q[0] * q[2] - q[3] * q[1])) - 0.034906585f; // Subtracted by 0.034906585 due to magnetic declenation in Odense
 				// yaw = atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]));
 
-				roll += 3.14159;
-				if(roll > 3.14159) {
-					roll = -2*3.14159 + roll;
+				roll += 3.14159f;
+				if(roll > 3.14159f) {
+					roll = -2.0f*3.14159f + roll;
 				}
 				
 				struct actuator_outputs_s act_out;
@@ -509,17 +509,23 @@ void LinearKalman::run()
 							linear_P = (I-linear_K * H) * linear_Pdot;
 						}
 
+						//Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
+						//P = P + Pdot * dt;
+						
+						//PX4_INFO("EKF:\t%8.4f",
+						//(double)xhat(11,0));
+
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
-							.x = linear_xhat(0,0),
-							.y = linear_xhat(1,0),
-							.z = linear_xhat(2,0),
-							.x_gps = linear_xhat(3,0),
-							.y_gps = linear_xhat(4,0),
-							.z_gps = linear_xhat(5,0),
+							.x = xhat(9,0),
+							.y = xhat(10,0),
+							.z = xhat(11,0),
 							.roll = xhat(0,0),
 							.pitch = xhat(1,0),
-							.yaw = xhat(2,0)
+							.yaw = xhat(2,0),
+							.x_gps = roll,
+							.y_gps = pitch,
+							.z_gps = yaw
 						};
 
 						if (extended_kalman_pub == nullptr) {
@@ -528,8 +534,6 @@ void LinearKalman::run()
 							orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
 						}
 						
-
-						//publish_extended_kalman(extended_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
 					}
 				}
 			}
