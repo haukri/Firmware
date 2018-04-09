@@ -107,8 +107,9 @@ for q in zip(attitude['q[0]'], attitude['q[1]'], attitude['q[2]'], attitude['q[3
 
 # plt.scatter(kalman['timestamp'], kalman['pitch'], color='b')
 # plt.scatter(kalman['timestamp'], kalman['y_gps'], color='g')
-plt.scatter(kalman['timestamp'], kalman['x'], color='lightseagreen')
-plt.scatter(attitude['timestamp'], roll, color='r')
+plt.scatter(kalman['timestamp'], kalman['y'], color='b')
+plt.scatter(kalman['timestamp'], kalman['pitch'], color='r')
+plt.scatter(attitude['timestamp'], pitch, color='g')
 # plt.scatter(kalman['timestamp'], kalman['y_gps'], color='g')
 
 
@@ -117,8 +118,8 @@ plt.scatter(attitude['timestamp'], roll, color='r')
 # plt.scatter(kalman['timestamp'], kalman['y_gps'], color='g')
 # plt.scatter(kalman['timestamp'], kalman['z_gps'], color='b')
 
-# axes = plt.gca()
-# axes.set_ylim([-10, 50])
+axes = plt.gca()
+axes.set_ylim([-10, 50])
 
 # plt.scatter(trueatt['timestamp'], truepitch, color='r')
 

@@ -234,10 +234,10 @@ void LinearKalman::run()
 	I.setZero();
 	for(int i = 0; i < 6; i++) {
 		R_inv(i,i) = 100;
-		R(i,i) = 0.01;
+		R(i,i) = 0.1;
 	}
 	for(int i = 0; i < 12; i++) {
-		Q(i,i) = 0.1;
+		Q(i,i) = 0.001;
 		P(i,i) = 1;
 		I(i,i) = 1;
 	}
@@ -302,10 +302,10 @@ void LinearKalman::run()
 	float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion for Magwick's filter
 
 	std::default_random_engine generator;
-    std::normal_distribution<float> dist(0.0, 0.1);
+    std::normal_distribution<float> dist(0.0, 0.01);
 
 	matrix::Matrix<float, 12, 6> K;
-	double observer_beta = 200;
+	double observer_beta = 1;
 	P(0,0) = 2.4000 * observer_beta;
 	P(0,3) = -0.8000 * observer_beta;
 	P(1,1) = 2.4000 * observer_beta;
@@ -377,6 +377,9 @@ void LinearKalman::run()
 				//orb_copy(ORB_ID(sensor_combined), sensor_sub_fd, &raw_imu);
 				//process_IMU_data(&raw_imu, q, dt);
 
+				orb_check(attitude_sub_fd, &sensor_updated);
+				orb_copy(ORB_ID(vehicle_attitude), attitude_sub_fd, &att);
+
 				q[0] = att.q[0];
 				q[1] = att.q[1];
 				q[2] = att.q[2];
@@ -432,7 +435,7 @@ void LinearKalman::run()
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
 						//float time_now = hrt_absolute_time();
-						dt = 0.001; //(time_now - last_kalman_dt) / 1000000.0;
+						dt = 0.0001; //(time_now - last_kalman_dt) / 1000000.0;
 
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
 						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
@@ -456,20 +459,19 @@ void LinearKalman::run()
 						xhatdot(0,0) = xhat(3,0) + xhat(5,0)*xhat(1,0) + xhat(4,0)*xhat(0,0)*xhat(1,0);
 						xhatdot(1,0) = xhat(4,0) - xhat(5,0)*xhat(0,0);
 						xhatdot(2,0) = xhat(5,0) + xhat(4,0)*xhat(0,0);
-						xhatdot(3,0) = ((Iy-Iz)/Ix)*xhat(5,0)*xhat(4,0) + (tx/Ix);
-						xhatdot(4,0) = ((Iz-Ix)/Iy)*xhat(3,0)*xhat(5,0) + (ty/Iy);
-						xhatdot(5,0) = ((Ix-Iy)/Iz)*xhat(3,0)*xhat(4,0) + (tz/Iz);
+						xhatdot(3,0) = ((Iy-Iz)/Ix)*xhat(5,0)*xhat(4,0) + (tx_filtered/Ix);
+						xhatdot(4,0) = ((Iz-Ix)/Iy)*xhat(3,0)*xhat(5,0) + (ty_filtered/Iy);
+						xhatdot(5,0) = ((Ix-Iy)/Iz)*xhat(3,0)*xhat(4,0) + (tz_filtered/Iz);
 						xhatdot(6,0) = xhat(5,0)*xhat(7,0) - xhat(4,0)*xhat(8,0) - g*xhat(1,0);
 						xhatdot(7,0) = xhat(3,0)*xhat(8,0) - xhat(5,0)*xhat(6,0) + g*xhat(0,0);
-						xhatdot(8,0) = xhat(4,0)*xhat(6,0) - xhat(3,0)*xhat(7,0) + g - (ft/m);
+						xhatdot(8,0) = xhat(4,0)*xhat(6,0) - xhat(3,0)*xhat(7,0) + g - (ft_filtered/m);
 						xhatdot(9,0) = xhat(8,0)*(xhat(0,0)*xhat(2,0) + xhat(1,0)) - xhat(7,0)*(xhat(2,0) - xhat(0,0)*xhat(1,0)) + xhat(6,0);
 						xhatdot(10,0) = xhat(7,0)*(1 + xhat(0,0)*xhat(2,0)*xhat(1,0)) - xhat(8,0)*(xhat(0,0) - xhat(2,0)*xhat(1,0)) + xhat(6,0)*xhat(2,0);
 						xhatdot(11,0) = xhat(8,0) - xhat(6,0)*xhat(1,0) + xhat(7,0)*xhat(0,0);
 						
-						orb_check(attitude_sub_fd, &sensor_updated);
-
+						matrix::Matrix<float, 12, 1> linear_xhatdot;
+						matrix::Matrix<float, 12, 1> debug;
 						if(sensor_updated) {
-							orb_copy(ORB_ID(vehicle_attitude), attitude_sub_fd, &att);
 							sensor_updated = false;
 							z(0,0) = roll;
 							z(1,0) = pitch;
@@ -477,6 +479,7 @@ void LinearKalman::run()
 							z(3,0) = x; //loc_pos.x + dist(generator);
 							z(4,0) = y; //loc_pos.y + dist(generator);
 							z(5,0) = altitude; //loc_pos.z + dist(generator);
+							debug = xhatdot + (K * (z - H * xhat));
 							xhatdot = xhatdot + (K * (z - H * xhat));
 							xhat = xhat + (xhatdot * dt);
 
@@ -487,19 +490,18 @@ void LinearKalman::run()
 							// Linear Kalman filter
 							matrix::Matrix<float, 12, 6> linear_K;
 							matrix::Matrix<float, 12, 12> linear_Pdot;
-							matrix::Matrix<float, 12, 1> linear_xhatdot;
 							matrix::SquareMatrix<float, 6> S;
 
 							linear_xhatdot.setZero();
 
 							matrix::Matrix<float, 4, 1> linear_u;
-							linear_u(0,0) = ft;
-							linear_u(1,0) = tx;
-							linear_u(2,0) = ty;
-							linear_u(3,0) = tz;
+							linear_u(0,0) = ft_filtered;
+							linear_u(1,0) = tx_filtered;
+							linear_u(2,0) = ty_filtered;
+							linear_u(3,0) = tz_filtered;
 
 							// Prediction State
-							linear_Pdot = F * linear_P * F.transpose();
+							linear_Pdot = F * linear_P * F.transpose() + Q;
 							linear_xhatdot = F * linear_xhat + linear_B * linear_u;
 
 							// Corrective State
@@ -507,6 +509,7 @@ void LinearKalman::run()
 							linear_K = linear_P * HT * inv(S);
 							linear_xhat = linear_xhatdot + linear_K*(z - H * linear_xhatdot);
 							linear_P = (I-linear_K * H) * linear_Pdot;
+
 						}
 
 						//Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
@@ -517,14 +520,14 @@ void LinearKalman::run()
 
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
-							.x = xhat(9,0),
-							.y = xhat(10,0),
-							.z = xhat(11,0),
-							.roll = xhat(0,0),
-							.pitch = xhat(1,0),
-							.yaw = xhat(2,0),
-							.x_gps = roll,
-							.y_gps = pitch,
+							.x = xhat(0,0),
+							.y = xhat(1,0),
+							.z = xhat(2,0),
+							.roll = xhat(3,0),
+							.pitch = xhat(4,0),
+							.yaw = xhat(5,0),
+							.x_gps = linear_xhat(1,0),
+							.y_gps = linear_xhat(4,0),
 							.z_gps = yaw
 						};
 
@@ -557,10 +560,16 @@ void LinearKalman::update_model_inputs(struct actuator_outputs_s * act_out, floa
 	tz = d*(float)(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) - pow(act_out->output[2], 2) - pow(act_out->output[3], 2));
 	ft = b*(float)(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
 
-	tx /= 3;
-	ty /= 6;
-	tz /= 12;
-	ft *= 1.2;
+	//tx /= 3;
+	//ty *= 1.5;
+	//tz /= 12;
+	//ft *= 1.2;
+
+	tx_filtered = _kf_tx.updateEstimate(tx);
+	ty_filtered = _kf_ty.updateEstimate(ty);
+	tz_filtered = _kf_tz.updateEstimate(tz);
+	ft_filtered = _kf_ft.updateEstimate(ft);
+
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 }
 
