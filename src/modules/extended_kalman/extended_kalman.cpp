@@ -314,10 +314,9 @@ void ExtendedKalman::run()
 				
 				process_IMU_data(&raw_imu, q, dt);
 					
-				roll  = atan2(2.0f * (q[1] * -q[0] + q[3] * -q[2]), q[1] * q[1] - -q[0] * -q[0] - q[3] * q[3] + -q[2] * -q[2]);
-				pitch = -asin(2.0f * (-q[0] * -q[2] - q[1] * q[3]));
-				yaw   = -atan2(2.0f * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]);
-
+    			yaw   = atan2f(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);   
+    			pitch = -asinf(2.0f * (q[1] * q[3] - q[0] * q[2]));
+    			roll  = atan2f(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
 				
 
 				/*extended_kalman_s extended_kalman = {
@@ -374,7 +373,7 @@ void ExtendedKalman::run()
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
 						//float time_now = hrt_absolute_time();
-						dt = 0.002; //(time_now - last_kalman_dt) / 1000000.0;
+						dt = 0.0005; //(time_now - last_kalman_dt) / 1000000.0;
 
 						//last_kalman_dt = time_now;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
@@ -391,11 +390,6 @@ void ExtendedKalman::run()
 						y += pos_correction[1];
 						altitude += pos_correction[2];
 						
-						PX4_INFO("Corrections:\t%8.4f\t%8.4f\t%8.4f",
-						(double)pos_correction[0],
-						(double)pos_correction[1],
-						(double)pos_correction[2]);
-
 						/*
 							K = P * H' / R;
 							xhatdot = xhatdot + K * (z - H * xhat);
@@ -417,8 +411,6 @@ void ExtendedKalman::run()
 						z(3,0) = x;
 						z(4,0) = y;
 						z(5,0) = altitude;
-
-						
 
 						F(0,0) = xhat(4,0)*xhat(1,0);
 						F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0);
@@ -540,7 +532,7 @@ void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, fl
 
 	tx = b*l*((float)pow(act_out->output[1], 2) - (float)pow(act_out->output[0], 2));
 	ty = b*l*((float)pow(act_out->output[2], 2) - (float)pow(act_out->output[3], 2));;
-	tz = d*((float)pow(act_out->output[2], 2) + (float)pow(act_out->output[3], 2) - (float)pow(act_out->output[0], 2) - (float)pow(act_out->output[1], 2));
+	tz = d*((float)pow(act_out->output[0], 2) + (float)pow(act_out->output[1], 2) - (float)pow(act_out->output[2], 2) - (float)pow(act_out->output[3], 2));
 	ft = b*((float)pow(act_out->output[0], 2) + (float)pow(act_out->output[1], 2) + (float)pow(act_out->output[2], 2) + (float)pow(act_out->output[3], 2));
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 }
@@ -579,7 +571,7 @@ void ExtendedKalman::acc_position_extrapolation(struct sensor_combined_s *raw_im
 	//float newVelocity[3] = {0.0f, 0.0f, 0.0f};
 	float An = raw_imu->accelerometer_m_s2[0];
 	float Ae = raw_imu->accelerometer_m_s2[1];
-	float Ad = raw_imu->accelerometer_m_s2[2] - 9.8f;
+	float Ad = raw_imu->accelerometer_m_s2[2] + 9.8f;
 	float dt = (float)raw_imu->accelerometer_integral_dt / 1000000;
 	velocity[0] = velocity[0] + An * dt;
 	velocity[1] = velocity[1] + Ae * dt; 
@@ -587,8 +579,8 @@ void ExtendedKalman::acc_position_extrapolation(struct sensor_combined_s *raw_im
 
 	//float newPosition[3] = {0.0f, 0.0f, 0.0f};
 	position[0] = position[0] + velocity[0] * dt + (raw_imu->accelerometer_m_s2[0] * dt*dt) / 2;
-	position[1] = position[1] + velocity[1] * dt + (raw_imu->accelerometer_m_s2[0] * dt*dt) / 2;
-	position[2] = position[2] + velocity[2] * dt + ((raw_imu->accelerometer_m_s2[0] + + 9.8f) * dt*dt) / 2;
+	position[1] = position[1] + velocity[1] * dt + (raw_imu->accelerometer_m_s2[1] * dt*dt) / 2;
+	position[2] = position[2] + velocity[2] * dt + ((raw_imu->accelerometer_m_s2[2] + 9.8f) * dt*dt) / 2;
 
 	pos_correction[0] = position[0];
 	pos_correction[1] = position[1];
@@ -626,7 +618,7 @@ void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, flo
 	float q1 = q[0], q2 = q[1], q3 = q[2], q4 = q[3];   // short name local variable for readability
 	float norm;
 	float hx, hy, _2bx, _2bz;
-	float s1, s2, s3, s4;	
+	float s1, s2, s3, s4;
 	float qDot1, qDot2, qDot3, qDot4;
 
 	// Auxiliary variables to avoid repeated arithmetic
@@ -654,7 +646,7 @@ void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, flo
 	float q4q4 = q4 * q4;
 
 	// Normalise accelerometer measurement
-	norm = sqrt(ax * ax + ay * ay + az * az);
+	norm = sqrtf(ax * ax + ay * ay + az * az);
 	if (norm < 0.00001f) return; // handle NaN
 	norm = 1.0f/norm;
 	ax *= norm;

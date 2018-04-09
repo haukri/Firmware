@@ -107,8 +107,8 @@ for q in zip(attitude['q[0]'], attitude['q[1]'], attitude['q[2]'], attitude['q[3
 
 # plt.scatter(kalman['timestamp'], kalman['pitch'], color='b')
 # plt.scatter(kalman['timestamp'], kalman['y_gps'], color='g')
-plt.scatter(kalman['timestamp'], kalman['x'], color='lightseagreen')
-plt.scatter(attitude['timestamp'], roll, color='r')
+#plt.scatter(kalman['timestamp'], kalman['x'], color='lightseagreen')
+#plt.scatter(attitude['timestamp'], roll, color='r')
 # plt.scatter(kalman['timestamp'], kalman['y_gps'], color='g')
 
 
@@ -122,10 +122,10 @@ plt.scatter(attitude['timestamp'], roll, color='r')
 
 # plt.scatter(trueatt['timestamp'], truepitch, color='r')
 
-# plt.scatter(kalman['timestamp'], kalman['z'], color='r')
-# plt.scatter(kalman['timestamp'], kalman['x_gps'], color='g')
-# plt.scatter(pos['timestamp'], pos['z'], color='b')
-# plt.scatter(truepos['timestamp'], truepos['z'], color='lightseagreen')
+plt.scatter(kalman['timestamp'], kalman['z'], color='r')
+plt.scatter(kalman['timestamp'], kalman['z_gps'], color='g')
+plt.scatter(pos['timestamp'], pos['z'], color='b')
+plt.scatter(truepos['timestamp'], truepos['z'], color='lightseagreen')
 
 # plt.scatter(sensors['timestamp'], sensors['gyro_rad[1]'], color='g')
 # plt.scatter(sensors['timestamp'], sensors['accelerometer_m_s2[1]'], color='lightseagreen')

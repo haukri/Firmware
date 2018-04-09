@@ -511,9 +511,6 @@ void LinearKalman::run()
 
 						//Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
 						//P = P + Pdot * dt;
-						
-						//PX4_INFO("EKF:\t%8.4f",
-						//(double)xhat(11,0));
 
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
@@ -560,7 +557,7 @@ void LinearKalman::update_model_inputs(struct actuator_outputs_s * act_out, floa
 	tx /= 3;
 	ty /= 6;
 	tz /= 12;
-	ft *= 1.2;
+	ft *= 1.2f;
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 }
 
