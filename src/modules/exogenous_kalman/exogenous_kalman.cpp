@@ -31,7 +31,7 @@
  *
  ****************************************************************************/
 
-#include "extended_kalman.h"
+#include "exogenous_kalman.h"
 
 #include <px4_getopt.h>
 #include <px4_log.h>
@@ -59,12 +59,12 @@
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/vehicle_gps_position.h>
-#include <uORB/topics/extended_kalman.h>
+#include <uORB/topics/exogenous_kalman.h>
 #include <uORB/topics/actuator_outputs.h>
 
 #define beta 0.60459927739f
 
-int ExtendedKalman::print_usage(const char *reason)
+int ExogenousKalman::print_usage(const char *reason)
 {
 	if (reason) {
 		PX4_WARN("%s\n", reason);
@@ -95,7 +95,7 @@ int ExtendedKalman::print_usage(const char *reason)
 	return 0;
 }
 
-int ExtendedKalman::print_status()
+int ExogenousKalman::print_status()
 {
 	PX4_INFO("Running");
 	// TODO: print additional runtime information about the state of the module
@@ -103,7 +103,7 @@ int ExtendedKalman::print_status()
 	return 0;
 }
 
-int ExtendedKalman::custom_command(int argc, char *argv[])
+int ExogenousKalman::custom_command(int argc, char *argv[])
 {
 	/*
 	if (!is_running()) {
@@ -122,9 +122,9 @@ int ExtendedKalman::custom_command(int argc, char *argv[])
 }
 
 
-int ExtendedKalman::task_spawn(int argc, char *argv[])
+int ExogenousKalman::task_spawn(int argc, char *argv[])
 {
-	_task_id = px4_task_spawn_cmd("extended_kalman",
+	_task_id = px4_task_spawn_cmd("exogenous_kalman",
 				      SCHED_DEFAULT,
 				      SCHED_PRIORITY_DEFAULT,
 				      1024,
@@ -139,7 +139,7 @@ int ExtendedKalman::task_spawn(int argc, char *argv[])
 	return 0;
 }
 
-ExtendedKalman *ExtendedKalman::instantiate(int argc, char *argv[])
+ExogenousKalman *ExogenousKalman::instantiate(int argc, char *argv[])
 {
 	int example_param = 0;
 	bool example_flag = false;
@@ -175,7 +175,7 @@ ExtendedKalman *ExtendedKalman::instantiate(int argc, char *argv[])
 		return nullptr;
 	}
 
-	ExtendedKalman *instance = new ExtendedKalman(example_param, example_flag);
+	ExogenousKalman *instance = new ExogenousKalman(example_param, example_flag);
 
 	if (instance == nullptr) {
 		PX4_ERR("alloc failed");
@@ -184,13 +184,13 @@ ExtendedKalman *ExtendedKalman::instantiate(int argc, char *argv[])
 	return instance;
 }
 
-ExtendedKalman::ExtendedKalman(int example_param, bool example_flag)
+ExogenousKalman::ExogenousKalman(int example_param, bool example_flag)
 	: SuperBlock(nullptr, "MOD"),
 	_sys_autostart(this, "SYS_AUTOSTART", false)
 {
 }
 
-void ExtendedKalman::run()
+void ExogenousKalman::run()
 {
 	PX4_INFO("asdfasdfasdf!");
 
@@ -219,7 +219,7 @@ void ExtendedKalman::run()
   	struct vehicle_gps_position_s ref_gps;
 	struct vehicle_attitude_s att;
   	struct map_projection_reference_s mp_ref = {};
-	orb_advert_t extended_kalman_pub = nullptr;
+	orb_advert_t exogenous_kalman_pub = nullptr;
 
 	matrix::Matrix<float, 12, 1> xhat;
 	xhat.setZero();
@@ -266,16 +266,44 @@ void ExtendedKalman::run()
 	float pitch = 0;
 	float yaw = 0;
 
-	float pos_correction[3] = {0.0f, 0.0f, 0.0f};
-	float velocity[3] = {0.0f, 0.0f, 0.0f};
-	float position[3] = {0.0f, 0.0f, 0.0f};
-
 	float dt = 0.2;
-	//float last_kalman_dt = 0;
+	float last_kalman_dt = 0;
 
 	bool flying = false;
 
 	std::deque<double> gps_check_vector;
+
+
+	matrix::Matrix<float, 4, 1> test;
+	matrix::Matrix<float, 12, 6> K_observer;
+	matrix::Matrix<float, 12, 12> P_observer;
+	P_observer.setZero();
+	double observer_beta = 50;
+	P_observer(0,0) = 2.4000 * observer_beta;
+	P_observer(0,3) = -0.8000 * observer_beta;
+	P_observer(1,1) = 2.4000 * observer_beta;
+	P_observer(1,4) = -0.8000 * observer_beta;
+	P_observer(2,2) = 2.4000 * observer_beta;
+	P_observer(2,5) = -0.8000 * observer_beta;
+	P_observer(3,0) = -0.8000 * observer_beta;
+	P_observer(3,3) = 1.6000 * observer_beta;
+	P_observer(4,1) = -0.8000 * observer_beta;
+	P_observer(4,4) = 1.6000 * observer_beta;
+	P_observer(5,2) = -0.8000 * observer_beta;
+	P_observer(5,5) = 1.6000 * observer_beta;
+	P_observer(6,6) = 0.8000 * observer_beta;
+	P_observer(6,9) = 0.4000 * observer_beta;
+	P_observer(7,7) = 0.8000 * observer_beta;
+	P_observer(7,10) = 0.4000 * observer_beta;
+	P_observer(8,8) = 0.8000 * observer_beta;
+	P_observer(8,11) = 0.4000 * observer_beta;
+	P_observer(9,6) = 0.4000 * observer_beta;
+	P_observer(9,9) = 1.2000 * observer_beta;
+	P_observer(10,7) = 0.4000 * observer_beta;
+	P_observer(10,10) = 1.2000 * observer_beta;
+	P_observer(11,8) = 0.4000 * observer_beta;
+	P_observer(11,11) = 1.2000 * observer_beta;
+	K_observer = P_observer*HT;
 
 	std::default_random_engine generator;
     std::normal_distribution<float> dist(0.0, 0.03);
@@ -332,6 +360,30 @@ void ExtendedKalman::run()
 				roll += dist(generator);
 				pitch += dist(generator);
 				yaw += dist(generator);
+
+				/*roll += 3.14159f;
+				if(roll > 3.14159f) {
+					roll = 2.0f*3.14159f - roll;
+				}*/
+				
+
+				/*exogenous_kalman_s exogenous_kalman = {
+					.timestamp = hrt_absolute_time(),
+					.q[0] = roll,
+					.q[1] = pitch,
+					.q[2] = yaw
+				};
+
+				if (exogenous_kalman_pub == nullptr) {
+					exogenous_kalman_pub = orb_advertise_queue(ORB_ID(exogenous_kalman), &exogenous_kalman, 10);
+				} else {
+					orb_publish(ORB_ID(exogenous_kalman), exogenous_kalman_pub, &exogenous_kalman);
+				}*/
+
+				/*PX4_INFO("Quaternions:\t%8.4f\t%8.4f\t%8.4f",
+						(double)roll,
+						(double)pitch,
+						(double)yaw);*/
 				
 				struct actuator_outputs_s act_out;
 				orb_check(act_out_sub_fd, &updated);
@@ -345,7 +397,6 @@ void ExtendedKalman::run()
 				struct vehicle_gps_position_s raw_gps;
 
 				orb_check(gps_sub_fd, &updated);
-
 
 				if (true) {
 					if(first_gps_run) {
@@ -361,30 +412,20 @@ void ExtendedKalman::run()
 							PX4_INFO("GPS Check success");
 							map_projection_init_timestamped(&mp_ref, ref_gps.lat*10e-8f, ref_gps.lon*10e-8f, hrt_absolute_time());
 							first_gps_run = false;
-							//last_kalman_dt = hrt_absolute_time();
+							last_kalman_dt = hrt_absolute_time();
 						}
 					}
 					else if(flying) {
 						float x = 0;
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
-						dt = 0.001; //(time_now - last_kalman_dt) / 1000000.0;
+						float time_now = hrt_absolute_time();
+						dt = 0.0004; //(time_now - last_kalman_dt) / 1000000.0;
 
-						//last_kalman_dt = time_now;
+						last_kalman_dt = time_now;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
 						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
 
-						// Velocity extrapolation on GPS position (additive)
-						if (updated){ 
-							velocity[0] = raw_gps.vel_n_m_s; velocity[1] = raw_gps.vel_e_m_s; velocity[2] = raw_gps.vel_d_m_s;
-							//velocity[0] = 0.0f; velocity[1] = 0.0f; velocity[2] = 0.0f;
-							position[0] = 0.0f; position[1] = 0.0f; position[2] = 0.0f;
-						}
-						acc_position_extrapolation(&raw_imu, pos_correction, velocity, position, roll, pitch, yaw);
-						x += pos_correction[0];
-						y += pos_correction[1];
-						altitude += pos_correction[2];
-						
 						/*
 							K = P * H' / R;
 							xhatdot = xhatdot + K * (z - H * xhat);
@@ -407,18 +448,54 @@ void ExtendedKalman::run()
 						z(4,0) = y;
 						z(5,0) = altitude;
 
-						F(0,0) = xhat(4,0)*xhat(1,0); F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0); F(0,3) = 1; F(0,4) = xhat(0,0)*xhat(1,0); F(0,5) = xhat(1,0);
-						F(1,0) = -xhat(5,0); F(1,4) = 1; F(1,5) = xhat(0,0);
-						F(2,0) = xhat(4,0); F(2,4) = xhat(0,0); F(2,5) = 1;
-						F(3,4) = ((Iy-Iz)/Ix)*xhat(5,0); F(3,5) = ((Iy-Iz)/Ix)*xhat(4,0);
-						F(4,3) = ((Iz-Ix)/Iy)*xhat(5,0); F(4,5) = ((Iz-Ix)/Iy)*xhat(3,0);
-						F(5,3) = ((Ix-Iy)/Iz)*xhat(4,0); F(5,4) = ((Ix-Iy)/Iz)*xhat(3,0);
-						F(6,1) = -g; F(6,4) = -xhat(8,0); F(6,5) = xhat(7,0); F(6,7) = xhat(5,0); F(6,8) = -xhat(4,0);
-						F(7,0) = g; F(7,3) = xhat(8,0); F(7,5) = -xhat(6,0); F(7,6) = -xhat(5,0); F(7,8) = xhat(3,0);
-						F(8,3) = -xhat(7,0); F(8,4) = xhat(6,0); F(8,6) = xhat(4,0); F(8,7) = -xhat(3,0);
-						F(9,0) = xhat(8,0)*xhat(2,0)+xhat(7,0)*xhat(1,0); F(9,1) = xhat(8,0)+xhat(7,0)*xhat(1,0); F(9,2) = xhat(8,0)*xhat(0,0)-xhat(7,0); F(9,6) = 1; F(9,7) = -xhat(2,0)+xhat(0,0)*xhat(1,0); F(9,8) = xhat(0,0)*xhat(2,0)+xhat(1,0);
-						F(10,0) = xhat(7,0)*xhat(2,0)*xhat(1,0)-xhat(8,0); F(10,1) = xhat(7,0)*xhat(0,0)*xhat(2,0)+xhat(8,0)*xhat(2,0); F(10,2) = xhat(7,0)*xhat(0,0)*xhat(1,0)+xhat(8,0)*xhat(1,0)+xhat(6,0); F(10,6) = xhat(2,0); F(10,7) = 1+xhat(0,0)*xhat(1,0)+xhat(2,0); F(10,8) = -xhat(0,0)+xhat(2,0)*xhat(1,0);
-						F(11,0) = xhat(7,0); F(11,1) = -xhat(6,0); F(11,6) = -xhat(1,0); F(11,7) = xhat(0,0); F(11,8) = 1;
+						F(0,0) = xhat(4,0)*xhat(1,0);
+						F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0);
+						F(0,3) = 1;
+						F(0,4) = xhat(0,0)*xhat(1,0);
+						F(0,5) = xhat(1,0);
+						F(1,0) = -xhat(5,0);
+						F(1,4) = 1;
+						F(1,5) = xhat(0,0);
+						F(2,0) = xhat(4,0);
+						F(2,4) = xhat(0,0);
+						F(2,5) = 1;
+						F(3,4) = ((Iy-Iz)/Ix)*xhat(5,0);
+						F(3,5) = ((Iy-Iz)/Ix)*xhat(4,0);
+						F(4,3) = ((Iz-Ix)/Iy)*xhat(5,0);
+						F(4,5) = ((Iz-Ix)/Iy)*xhat(3,0);
+						F(5,3) = ((Ix-Iy)/Iz)*xhat(4,0);
+						F(5,4) = ((Ix-Iy)/Iz)*xhat(3,0);
+						F(6,1) = -g;
+						F(6,4) = -xhat(8,0);
+						F(6,5) = xhat(7,0);
+						F(6,7) = xhat(5,0);
+						F(6,8) = -xhat(4,0);
+						F(7,0) = g;
+						F(7,3) = xhat(8,0);
+						F(7,5) = -xhat(6,0);
+						F(7,6) = -xhat(5,0);
+						F(7,8) = xhat(3,0);
+						F(8,3) = -xhat(7,0);
+						F(8,4) = xhat(6,0);
+						F(8,6) = xhat(4,0);
+						F(8,7) = -xhat(3,0);
+						F(9,0) = xhat(8,0)*xhat(2,0)+xhat(7,0)*xhat(1,0);
+						F(9,1) = xhat(8,0)+xhat(7,0)*xhat(1,0);
+						F(9,2) = xhat(8,0)*xhat(0,0)-xhat(7,0);
+						F(9,6) = 1;
+						F(9,7) = -xhat(2,0)+xhat(0,0)*xhat(1,0);
+						F(9,8) = xhat(0,0)*xhat(2,0)+xhat(1,0);
+						F(10,0) = xhat(7,0)*xhat(2,0)*xhat(1,0)-xhat(8,0);
+						F(10,1) = xhat(7,0)*xhat(0,0)*xhat(2,0)+xhat(8,0)*xhat(2,0);
+						F(10,2) = xhat(7,0)*xhat(0,0)*xhat(1,0)+xhat(8,0)*xhat(1,0)+xhat(6,0);
+						F(10,6) = xhat(2,0);
+						F(10,7) = 1+xhat(0,0)*xhat(1,0)+xhat(2,0);
+						F(10,8) = -xhat(0,0)+xhat(2,0)*xhat(1,0);
+						F(11,0) = xhat(7,0);
+						F(11,1) = -xhat(6,0);
+						F(11,6) = -xhat(1,0);
+						F(11,7) = xhat(0,0);
+						F(11,8) = 1;
 
 						xhatdot(0,0) = xhat(3,0) + xhat(5,0)*xhat(1,0) + xhat(4,0)*xhat(0,0)*xhat(1,0);
 						xhatdot(1,0) = xhat(4,0) - xhat(5,0)*xhat(0,0);
@@ -433,43 +510,31 @@ void ExtendedKalman::run()
 						xhatdot(10,0) = xhat(7,0)*(1 + xhat(0,0)*xhat(2,0)*xhat(1,0)) - xhat(8,0)*(xhat(0,0) - xhat(2,0)*xhat(1,0)) + xhat(6,0)*xhat(2,0);
 						xhatdot(11,0) = xhat(8,0) - xhat(6,0)*xhat(1,0) + xhat(7,0)*xhat(0,0);
 
-						matrix::Matrix<float, 12, 6> K;
-						matrix::Matrix<float, 12, 12> Pdot;
-						matrix::Matrix<float, 12, 6> debug;
 						
-						// Predictive State
-						Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
-						xhatdot = xhatdot + (K * (z - H * xhat));
-
-						// Corrective State
-						K = P * HT * R_inv;
+						xhatdot = xhatdot + (K_observer * (z - H * xhat));
 						xhat = xhat + (xhatdot * dt);
-						P = P + Pdot * dt;
 
-						//PX4_INFO("EKF:\t%8.4f",
-						//(double)xhat(11,0));
-						
-						extended_kalman_s extended_kalman = {
+
+						exogenous_kalman_s exogenous_kalman = {
 							.timestamp = hrt_absolute_time(),
-							.x = xhat(9,0),
-							.y = xhat(10,0),
-							.z = xhat(11,0),
+							.x = xhat(0,0),
+							.y = xhat(1,0),
+							.z = xhat(2,0),
+							.x_gps = xhat(3,0),
+							.y_gps = xhat(4,0),
+							.z_gps = xhat(5,0),
 							.roll = roll,
 							.pitch = pitch,
-							.yaw = yaw,
-							.x_gps = x,
-							.y_gps = y,
-							.z_gps = altitude
-
+							.yaw = yaw
 						};
 
-						if (extended_kalman_pub == nullptr) {
-							extended_kalman_pub = orb_advertise_queue(ORB_ID(extended_kalman), &extended_kalman, 10);
+						if (exogenous_kalman_pub == nullptr) {
+							exogenous_kalman_pub = orb_advertise_queue(ORB_ID(exogenous_kalman), &exogenous_kalman, 10);
 						} else {
-							orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
+							orb_publish(ORB_ID(exogenous_kalman), exogenous_kalman_pub, &exogenous_kalman);
 						}
-						
-						
+
+						//publish_exogenous_kalman(exogenous_kalman_pub, xhat(9,0), xhat(10,0), xhat(11,0));
 					}
 				}
 			}
@@ -479,7 +544,7 @@ void ExtendedKalman::run()
 	PX4_INFO("exiting");
 }
 
-void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, float &tx, float &ty, float &tz, float &ft) {
+void ExogenousKalman::update_model_inputs(struct actuator_outputs_s * act_out, float &tx, float &ty, float &tz, float &ft) {
 	/* Convert drone thrust levels to tx, ty, tz and ft */
 	// PX4_INFO("Actuator Outputs:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3]);
 	float b = 1.1e-6;
@@ -496,7 +561,7 @@ void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, fl
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 }
 
-double ExtendedKalman::getVariance(const std::deque<double>& vec) {
+double ExogenousKalman::getVariance(const std::deque<double>& vec) {
     double mean = 0, M2 = 0, variance = 0;
 
     size_t n = vec.size();
@@ -510,44 +575,23 @@ double ExtendedKalman::getVariance(const std::deque<double>& vec) {
     return variance;
 }
 
-void ExtendedKalman::publish_extended_kalman(orb_advert_t &extended_kalman_pub, float x, float y, float z) //Logger
+void ExogenousKalman::publish_exogenous_kalman(orb_advert_t &exogenous_kalman_pub, float x, float y, float z) //Logger
 {
-	extended_kalman_s extended_kalman = {
+	exogenous_kalman_s exogenous_kalman = {
 		.timestamp = hrt_absolute_time(),
 		.x = x,
 		.y = y,
 		.z = z
 	};
 
-	if (extended_kalman_pub == nullptr) {
-		extended_kalman_pub = orb_advertise_queue(ORB_ID(extended_kalman), &extended_kalman, 10);
+	if (exogenous_kalman_pub == nullptr) {
+		exogenous_kalman_pub = orb_advertise_queue(ORB_ID(exogenous_kalman), &exogenous_kalman, 10);
 	} else {
-		orb_publish(ORB_ID(extended_kalman), extended_kalman_pub, &extended_kalman);
+		orb_publish(ORB_ID(exogenous_kalman), exogenous_kalman_pub, &exogenous_kalman);
 	}
 }
 
-void ExtendedKalman::acc_position_extrapolation(struct sensor_combined_s *raw_imu, float pos_correction[], float velocity[], float position[], float roll, float pitch, float yaw){
-	//float newVelocity[3] = {0.0f, 0.0f, 0.0f};
-	float An = raw_imu->accelerometer_m_s2[0];
-	float Ae = raw_imu->accelerometer_m_s2[1];
-	float Ad = raw_imu->accelerometer_m_s2[2] + 9.8f;
-	float dt = (float)raw_imu->accelerometer_integral_dt / 1000000;
-	velocity[0] = velocity[0] + An * dt;
-	velocity[1] = velocity[1] + Ae * dt; 
-	velocity[2] = velocity[2] + Ad * dt;
-
-	//float newPosition[3] = {0.0f, 0.0f, 0.0f};
-	position[0] = position[0] + velocity[0] * dt + (raw_imu->accelerometer_m_s2[0] * dt*dt) / 2;
-	position[1] = position[1] + velocity[1] * dt + (raw_imu->accelerometer_m_s2[1] * dt*dt) / 2;
-	position[2] = position[2] + velocity[2] * dt + ((raw_imu->accelerometer_m_s2[2] + 9.8f) * dt*dt) / 2;
-
-	pos_correction[0] = position[0];
-	pos_correction[1] = position[1];
-	pos_correction[2] = position[2];
-
-}
-
-void ExtendedKalman::process_IMU_data(struct sensor_combined_s *raw_imu, float q[], float dt){
+void ExogenousKalman::process_IMU_data(struct sensor_combined_s *raw_imu, float q[], float dt){
 	float accel_scaled[3];
 	accel_scaled[0] = raw_imu->accelerometer_m_s2[0];
 	accel_scaled[1] = raw_imu->accelerometer_m_s2[1];
@@ -572,12 +616,12 @@ void ExtendedKalman::process_IMU_data(struct sensor_combined_s *raw_imu, float q
 	// roll  *= 180.0f / 3.14159f;
 }
 
-void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat)
+void ExogenousKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat)
 {
 	float q1 = q[0], q2 = q[1], q3 = q[2], q4 = q[3];   // short name local variable for readability
 	float norm;
 	float hx, hy, _2bx, _2bz;
-	float s1, s2, s3, s4;
+	float s1, s2, s3, s4;	
 	float qDot1, qDot2, qDot3, qDot4;
 
 	// Auxiliary variables to avoid repeated arithmetic
@@ -605,7 +649,7 @@ void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, flo
 	float q4q4 = q4 * q4;
 
 	// Normalise accelerometer measurement
-	norm = sqrtf(ax * ax + ay * ay + az * az);
+	norm = sqrt(ax * ax + ay * ay + az * az);
 	if (norm < 0.00001f) return; // handle NaN
 	norm = 1.0f/norm;
 	ax *= norm;
@@ -664,7 +708,7 @@ void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, flo
 
 }
 
-void ExtendedKalman::parameters_update(int parameter_update_sub, bool force)
+void ExogenousKalman::parameters_update(int parameter_update_sub, bool force)
 {
 	bool updated;
 	struct parameter_update_s param_upd;
@@ -681,7 +725,7 @@ void ExtendedKalman::parameters_update(int parameter_update_sub, bool force)
 }
 
 
-int extended_kalman_main(int argc, char *argv[])
+int exogenous_kalman_main(int argc, char *argv[])
 {
-	return ExtendedKalman::main(argc, argv);
+	return ExogenousKalman::main(argc, argv);
 }
