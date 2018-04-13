@@ -39,21 +39,21 @@
 #include "matrix/Matrix.hpp"
 #include <deque>
 
-extern "C" __EXPORT int extended_kalman_main(int argc, char *argv[]);
+extern "C" __EXPORT int linear_kalman_main(int argc, char *argv[]);
 
 
-class ExtendedKalman : public ModuleBase<ExtendedKalman>, public control::SuperBlock
+class LinearKalman : public ModuleBase<LinearKalman>, public control::SuperBlock
 {
 public:
-	ExtendedKalman(int example_param, bool example_flag);
+	LinearKalman(int example_param, bool example_flag);
 
-	virtual ~ExtendedKalman() = default;
+	virtual ~LinearKalman() = default;
 
 	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
 
 	/** @see ModuleBase */
-	static ExtendedKalman *instantiate(int argc, char *argv[]);
+	static LinearKalman *instantiate(int argc, char *argv[]);
 
 	/** @see ModuleBase */
 	static int custom_command(int argc, char *argv[]);
@@ -83,8 +83,6 @@ private:
 	double getVariance(const std::deque<double>& vec);
 	void MadgwickQuaternionUpdate(float q[], float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat);
 	void process_IMU_data(struct sensor_combined_s *raw_imu, float q[], float dt);
-	void acc_position_extrapolation(struct sensor_combined_s *raw_imu, float pos_correction[], float velocity[], float position[], float roll, float pitch, float yaw);
-
 
 	control::BlockParamInt _sys_autostart; /**< example parameter */
 };

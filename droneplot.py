@@ -88,6 +88,10 @@ trueroll = []
 truepitch = []
 trueyaw = []
 
+roll = []
+pitch = []
+yaw = []
+
 qall = zip(q0, q1, q2, q3)
 
 for q in qall:
@@ -108,10 +112,10 @@ plt.plot(exogenous['timestamp'], exogenous['pitch'], color='b', linewidth=2)
 # plt.scatter(truepos['timestamp'], truepos['x'], color='g')
 # plt.scatter(kalman['timestamp'], kalman['x_gps'], color='purple')
 
-# plt.plot(actuators['output[0]'])
-# plt.plot(actuators['output[1]'])
-# plt.plot(actuators['output[2]'])
-# plt.plot(actuators['output[3]'])
+# plt.plot(actuators['output[0]'], color='b')
+# plt.plot(actuators['output[1]'], color='g')
+# plt.plot(actuators['output[2]'], color='r')
+# plt.plot(actuators['output[3]'], color='lightseagreen')
 
 # plt.plot(kalman['x_gps'], color='purple')
 
