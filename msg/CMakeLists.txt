@@ -56,6 +56,7 @@ set(msg_files
 	esc_status.msg
 	estimator_status.msg
 	extended_kalman.msg
+	exogenous_kalman.msg
 	follow_target.msg
 	fw_pos_ctrl_status.msg
 	geofence_result.msg

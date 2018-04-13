@@ -69,13 +69,14 @@ list_of_files = glob.glob(latest_file + '/*.ulg')
 latest_file = max(list_of_files, key=os.path.getctime)
 print(os.path.splitext(latest_file)[0])
 
-convert_ulog2csv(latest_file, 'vehicle_local_position,vehicle_local_position_groundtruth,extended_kalman,sensor_combined,actuator_outputs,vehicle_attitude,vehicle_attitude_groundtruth', False, ',')
+convert_ulog2csv(latest_file, 'vehicle_local_position,vehicle_local_position_groundtruth,sensor_combined,actuator_outputs,vehicle_attitude,vehicle_attitude_groundtruth,exogenous_kalman', False, ',')
 
 pos = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_local_position_0.csv')
 truepos = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_local_position_groundtruth_0.csv')
-kalman = pd.read_csv(os.path.splitext(latest_file)[0] + '_extended_kalman_0.csv')
+# kalman = pd.read_csv(os.path.splitext(latest_file)[0] + '_extended_kalman_0.csv')
 actuators = pd.read_csv(os.path.splitext(latest_file)[0] + '_actuator_outputs_0.csv')
 trueatt = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_attitude_groundtruth_0.csv')
+exogenous = pd.read_csv(os.path.splitext(latest_file)[0] + '_exogenous_kalman_0.csv')
 
 
 q0 = trueatt['q[0]']
@@ -95,12 +96,17 @@ for q in qall:
     trueyaw.append(math.atan2(2.0 * (-q[0] * q[3] + q[1] * -q[2]), q[1] * q[1] + -q[0] * -q[0] - q[3] * q[3] - -q[2] * -q[2]))
 
 # plt.scatter(kalman['timestamp'], kalman['yaw'], color='r')
-# plt.scatter(trueatt['timestamp'], trueyaw, color='b')
+# plt.scatter(trueatt['timestamp'], truepitch, color='b')
 
-plt.scatter(kalman['timestamp'], kalman['x'], color='r')
-plt.scatter(pos['timestamp'], pos['x'], color='b')
-plt.scatter(truepos['timestamp'], truepos['x'], color='g')
-plt.scatter(kalman['timestamp'], kalman['x_gps'], color='purple')
+
+# plt.plot(kalman['timestamp'], kalman['pitch'], color='r', linewidth=3)
+# plt.plot(kalman['timestamp'], kalman['y'], color='g', linewidth=3)
+# plt.plot(trueatt['timestamp'], truepitch, color='b', linewidth=3)
+plt.plot(exogenous['timestamp'], exogenous['pitch'], color='b', linewidth=2)
+# plt.plot(kalman['timestamp'], kalman['y_gps'], color='lightseagreen', linewidth=3)
+# plt.scatter(pos['timestamp'], pos['x'], color='b')
+# plt.scatter(truepos['timestamp'], truepos['x'], color='g')
+# plt.scatter(kalman['timestamp'], kalman['x_gps'], color='purple')
 
 # plt.plot(actuators['output[0]'])
 # plt.plot(actuators['output[1]'])

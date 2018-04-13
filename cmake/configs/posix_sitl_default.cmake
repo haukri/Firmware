@@ -89,6 +89,7 @@ set(config_module_list
 	modules/local_position_estimator
 	modules/position_estimator_inav
 	modules/extended_kalman
+	modules/exogenous_kalman
 
 	#
 	# Vehicle Control
