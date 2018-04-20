@@ -528,9 +528,9 @@ void ExtendedKalman::publish_extended_kalman(orb_advert_t &extended_kalman_pub, 
 
 void ExtendedKalman::acc_position_extrapolation(struct sensor_combined_s *raw_imu, float pos_correction[], float velocity[], float position[], float roll, float pitch, float yaw){
 	//float newVelocity[3] = {0.0f, 0.0f, 0.0f};
-	float An = raw_imu->accelerometer_m_s2[0];
-	float Ae = raw_imu->accelerometer_m_s2[1];
-	float Ad = raw_imu->accelerometer_m_s2[2] + 9.8f;
+	float An = cos(pitch)*cos(yaw)*raw_imu->accelerometer_m_s2[0]+(sin(pitch)*sin(roll)*cos(yaw)-cos(pitch)*sin(yaw))*raw_imu->accelerometer_m_s2[1]+(sin(pitch)*cos(pitch)*cos(yaw)+sin(yaw)*sin(roll))*raw_imu->accelerometer_m_s2[2];
+	float Ae = cos(pitch)*sin(yaw)*accelerometer_m_s2[0]+(sin(yaw)*sin(pitch)*sin(roll)+cos(yaw)*cos(roll))*accelerometer_m_s2[1]+(sin(pitch)*sin(roll)*cos(roll)-cos(yaw)*sin(pitch))*accelerometer_m_s2[2];
+	float Ad = -sin(pitch)*accelerometer_m_s2[0]+sin(roll)*cos(pitch)*accelerometer_m_s2[1]+cos(roll)*cos(pitch)*accelerometer_m_s2[2];
 	float dt = (float)raw_imu->accelerometer_integral_dt / 1000000;
 	velocity[0] = velocity[0] + An * dt;
 	velocity[1] = velocity[1] + Ae * dt; 
@@ -662,6 +662,77 @@ void ExtendedKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, flo
 	q[2] = q3 * norm;
 	q[3] = q4 * norm;
 
+}
+
+void ExtendedKalman::MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, float az, float gx, float gy, float gz, float deltat)
+{
+	float norm;
+	float s0, s1, s2, s3;
+	float qDot1, qDot2, qDot3, qDot4;
+	float _2q0, _2q1, _2q2, _2q3, _4q0, _4q1, _4q2 ,_8q1, _8q2, q0q0, q1q1, q2q2, q3q3;
+
+	// Rate of change of quaternion from gyroscope
+	qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
+	qDot2 = 0.5f * (q0 * gx + q2 * gz - q3 * gy);
+	qDot3 = 0.5f * (q0 * gy - q1 * gz + q3 * gx);
+	qDot4 = 0.5f * (q0 * gz + q1 * gy - q2 * gx);
+
+	// Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
+
+	// Normalise accelerometer measurement
+	norm = sqrtf(ax * ax + ay * ay + az * az);
+	norm = 1.0f/norm;
+	ax *= norm;
+	ay *= norm;
+	az *= norm;
+
+	// Auxiliary variables to avoid repeated arithmetic
+	_2q0 = 2.0f * q0;
+	_2q1 = 2.0f * q1;
+	_2q2 = 2.0f * q2;
+	_2q3 = 2.0f * q3;
+	_4q0 = 4.0f * q0;
+	_4q1 = 4.0f * q1;
+	_4q2 = 4.0f * q2;
+	_8q1 = 8.0f * q1;
+	_8q2 = 8.0f * q2;
+	q0q0 = q0 * q0;
+	q1q1 = q1 * q1;
+	q2q2 = q2 * q2;
+	q3q3 = q3 * q3;
+
+	// Gradient decent algorithm corrective step
+	s0 = _4q0 * q2q2 + _2q2 * ax + _4q0 * q1q1 - _2q1 * ay;
+	s1 = _4q1 * q3q3 - _2q3 * ax + 4.0f * q0q0 * q1 - _2q0 * ay - _4q1 + _8q1 * q1q1 + _8q1 * q2q2 + _4q1 * az;
+	s2 = 4.0f * q0q0 * q2 + _2q0 * ax + _4q2 * q3q3 - _2q3 * ay - _4q2 + _8q2 * q1q1 + _8q2 * q2q2 + _4q2 * az;
+	s3 = 4.0f * q1q1 * q3 - _2q1 * ax + 4.0f * q2q2 * q3 - _2q2 * ay;
+	norm = sqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4);    // normalise step magnitude
+	norm = 1.0f/norm;
+	s1 *= norm;
+	s2 *= norm;
+	s3 *= norm;
+	s4 *= norm;
+
+	// Apply feedback step
+	qDot1 -= beta * s0;
+	qDot2 -= beta * s1;
+	qDot3 -= beta * s2;
+	qDot4 -= beta * s3;
+
+
+	// Integrate rate of change of quaternion to yield quaternion
+	q0 += qDot1 * deltat;
+	q1 += qDot2 * deltat;
+	q2 += qDot3 * deltat;
+	q3 += qDot4 * deltat;
+
+	// Normalise quaternion
+	norm = sqrt(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4);    // normalise quaternion
+	norm = 1.0f/norm;
+	q[0] = q1 * norm;
+	q[1] = q2 * norm;
+	q[2] = q3 * norm;
+	q[3] = q4 * norm;
 }
 
 void ExtendedKalman::parameters_update(int parameter_update_sub, bool force)
