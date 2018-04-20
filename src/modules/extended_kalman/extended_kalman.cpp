@@ -676,9 +676,7 @@ void ExtendedKalman::MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, 
 	qDot2 = 0.5f * (q0 * gx + q2 * gz - q3 * gy);
 	qDot3 = 0.5f * (q0 * gy - q1 * gz + q3 * gx);
 	qDot4 = 0.5f * (q0 * gz + q1 * gy - q2 * gx);
-
-	// Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
-
+	
 	// Normalise accelerometer measurement
 	norm = sqrtf(ax * ax + ay * ay + az * az);
 	norm = 1.0f/norm;
