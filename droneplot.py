@@ -144,12 +144,13 @@ plt.ylabel('Pitch (rad)')
 offset = 35.5
 
 # plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['pitch'], color='blue', linewidth=1.5, label='XKF pitch')
-plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['pitch'], color='g', linewidth=1.5, label='Nonlinear Observer pitch')
-plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='b', linewidth=1.5, label='Gyro pitch')
-#plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y_gps'], color='lightseagreen', linewidth=1.5, label='ty filtered')
-#plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['z_gps'], color='b', linewidth=1.5, label='ty')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['pitch'], color='g', linewidth=1.5, label='Nonlinear Observer pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='b', linewidth=1.5, label='Gyro pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y_gps'], color='lightseagreen', linewidth=1.5, label='ty filtered')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['z_gps'], color='b', linewidth=1.5, label='ty')
+plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['pitch'], color='b', linewidth=1.5, label='EKF pitch')
 plt.plot([x/1000000.0 - offset for x in trueatt['timestamp']], truepitch, color='r', linewidth=1.5, label='True pitch')
-plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfpitch, color='lightseagreen', linewidth=1.5, label='True pitch')
+plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfpitch, color='g', linewidth=1.5, label='EKF2 pitch')
 
 # plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['yaw'], color='b', linewidth=1.5, label='EKF filtered yaw')
 

@@ -964,12 +964,16 @@ void ExogenousKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, fl
 	q[3] = q4 * norm;
 }
 
-void ExtendedKalman::MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, float az, float gx, float gy, float gz, float deltat)
+void ExogenousKalman::MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, float az, float gx, float gy, float gz, float deltat)
 {
 	float norm;
 	float s0, s1, s2, s3;
 	float qDot1, qDot2, qDot3, qDot4;
 	float _2q0, _2q1, _2q2, _2q3, _4q0, _4q1, _4q2 ,_8q1, _8q2, q0q0, q1q1, q2q2, q3q3;
+	float q0 = q[0];
+	float q1 = q[1];
+	float q2 = q[2];
+	float q3 = q[3];
 
 	// Rate of change of quaternion from gyroscope
 	qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
@@ -1006,12 +1010,12 @@ void ExtendedKalman::MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, 
 	s1 = _4q1 * q3q3 - _2q3 * ax + 4.0f * q0q0 * q1 - _2q0 * ay - _4q1 + _8q1 * q1q1 + _8q1 * q2q2 + _4q1 * az;
 	s2 = 4.0f * q0q0 * q2 + _2q0 * ax + _4q2 * q3q3 - _2q3 * ay - _4q2 + _8q2 * q1q1 + _8q2 * q2q2 + _4q2 * az;
 	s3 = 4.0f * q1q1 * q3 - _2q1 * ax + 4.0f * q2q2 * q3 - _2q2 * ay;
-	norm = sqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4);    // normalise step magnitude
+	norm = sqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3);    // normalise step magnitude
 	norm = 1.0f/norm;
+	s0 *= norm;
 	s1 *= norm;
 	s2 *= norm;
 	s3 *= norm;
-	s4 *= norm;
 
 	// Apply feedback step
 	qDot1 -= beta * s0;
@@ -1026,12 +1030,12 @@ void ExtendedKalman::MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, 
 	q3 += qDot4 * deltat;
 
 	// Normalise quaternion
-	norm = sqrt(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4);    // normalise quaternion
+	norm = sqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);    // normalise quaternion
 	norm = 1.0f/norm;
-	q[0] = q1 * norm;
-	q[1] = q2 * norm;
-	q[2] = q3 * norm;
-	q[3] = q4 * norm;
+	q[0] = q0 * norm;
+	q[1] = q1 * norm;
+	q[2] = q2 * norm;
+	q[3] = q3 * norm;
 }
 
 void ExogenousKalman::parameters_update(int parameter_update_sub, bool force)
