@@ -82,6 +82,7 @@ private:
 	void update_model_inputs(struct actuator_outputs_s *act_out, float &tx, float &ty, float &tz, float &ft);
 
 	double getVariance(const std::deque<double>& vec);
+	void MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, float az, float gx, float gy, float gz, float deltat)
 	void MadgwickQuaternionUpdate(float q[], float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat);
 	void process_IMU_data(struct sensor_combined_s *raw_imu, float q[], float dt);
 
