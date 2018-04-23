@@ -60,6 +60,7 @@ land_detector start multicopter
 navigator start
 ekf2 start
 exogenous_kalman start
+extended_kalman start
 mc_pos_control start
 mc_att_control start
 mixer load /dev/pwm_output0 ROMFS/px4fmu_common/mixers/quad_w.main.mix

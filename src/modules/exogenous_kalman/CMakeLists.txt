@@ -37,6 +37,8 @@ px4_add_module(
 	STACK_MAIN 1024
 	SRCS
 		exogenous_kalman.cpp
+		Kalman.h
+		Kalman.cpp
 	DEPENDS
 		platforms__common
 		modules__uORB
