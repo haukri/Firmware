@@ -80,13 +80,13 @@ actuators = pd.read_csv(os.path.splitext(latest_file)[0] + '_actuator_outputs_0.
 trueatt = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_attitude_groundtruth_0.csv')
 exogenous = pd.read_csv(os.path.splitext(latest_file)[0] + '_exogenous_kalman_0.csv')
 attitude = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_attitude_0.csv')
+sensors = pd.read_csv(os.path.splitext(latest_file)[0] + '_sensor_combined_0.csv')
 
 
 q0 = trueatt['q[0]']
 q1 = trueatt['q[1]']
 q2 = trueatt['q[2]']
 q3 = trueatt['q[3]']
-
 
 
 trueroll = []
@@ -100,6 +100,8 @@ ekfyaw = []
 roll = []
 pitch = []
 yaw = []
+
+truepos['z'] = [-x for x in truepos['z']]
 
 qall = zip(q0, q1, q2, q3)
 
@@ -143,14 +145,25 @@ plt.ylabel('Pitch (rad)')
 
 offset = 35.5
 
-# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['pitch'], color='blue', linewidth=1.5, label='XKF pitch')
-# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['pitch'], color='g', linewidth=1.5, label='Nonlinear Observer pitch')
+# plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['x_gps'], color='b', linewidth=1.5, label='Z Speed')
+# plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['z_gps'], color='purple', linewidth=1.5, label='Altitude GPS')
+
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['x'], color='g', linewidth=1.5, label='Nonlinear Observer Pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['pitch'], color='purple', linewidth=1.5, label='XKF Pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='b', linewidth=1.5, label='observer Pitch')
+# plt.plot([x/1000000.0 - offset for x in truepos['timestamp']], truepos['y'], color='g', linewidth=1.5, label='observer Pitch')
+plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='b', linewidth=1.5, label='observer Pitch')
+plt.plot([x/1000000.0 - offset for x in sensors['timestamp']], [x for x in sensors['accelerometer_m_s2[0]']], color='b', linewidth=1.5, label='observer Pitch')
+plt.plot([x/1000000.0 - offset for x in sensors['timestamp']], [x for x in sensors['accelerometer_m_s2[1]']], color='g', linewidth=1.5, label='observer Pitch')
+plt.plot([x/1000000.0 - offset for x in sensors['timestamp']], [x for x in sensors['accelerometer_m_s2[2]']], color='r', linewidth=1.5, label='observer Pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y_gps'], color='r', linewidth=1.5, label='observer Pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['b'], color='y', linewidth=1.5, label='observer Pitch')
 # plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='b', linewidth=1.5, label='Gyro pitch')
 # plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y_gps'], color='lightseagreen', linewidth=1.5, label='ty filtered')
 # plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['z_gps'], color='b', linewidth=1.5, label='ty')
-plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['pitch'], color='b', linewidth=1.5, label='EKF pitch')
+# plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['pitch'], color='b', linewidth=1.5, label='EKF pitch')
 plt.plot([x/1000000.0 - offset for x in trueatt['timestamp']], truepitch, color='r', linewidth=1.5, label='True pitch')
-plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfpitch, color='g', linewidth=1.5, label='EKF2 pitch')
+# plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfpitch, color='g', linewidth=1.5, label='EKF2 pitch')
 
 # plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['yaw'], color='b', linewidth=1.5, label='EKF filtered yaw')
 
@@ -158,6 +171,6 @@ plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfpitch, color=
 
 plt.legend(loc='upper left')
 
-#plt.savefig(script_dir + '/foo.png', bbox_inches='tight', dpi=300)
+# plt.savefig(script_dir + '/foo.png', bbox_inches='tight', dpi=300)
 
 plt.show()

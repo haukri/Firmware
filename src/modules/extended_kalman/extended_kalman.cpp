@@ -203,7 +203,7 @@ void ExtendedKalman::run()
 	/* subscribe to actuator_outputs topic */
 	int act_out_sub_fd = orb_subscribe(ORB_ID(actuator_outputs));
 
-	int attitude_sub_fd = orb_subscribe(ORB_ID(vehicle_attitude));
+	int attitude_sub_fd = orb_subscribe(ORB_ID(vehicle_attitude_groundtruth));
 
 	/* limit the update rate to 5 Hz */
 	//orb_set_interval(sensor_sub_fd, 1);
@@ -229,9 +229,9 @@ void ExtendedKalman::run()
 	matrix::Matrix<float, 12, 12> H;
 	matrix::Matrix<float, 12, 12> HT;
 	for(int i = 0; i < 6; i++)
-		R_inv(i,i) = 100;
+		R_inv(i,i) = 10;
 	for(int i = 0; i < 12; i++) {
-		Q(i,i) = 0.1;
+		Q(i,i) = 0.01;
 		P(i,i) = 1;
 		H(i,i) = 1;
 		HT(i,i) = 1;
@@ -276,7 +276,7 @@ void ExtendedKalman::run()
 	float position[3] = {0.0f, 0.0f, 0.0f};
 
 	float dt = 0.2;
-	//float last_kalman_dt = 0;
+	float last_kalman_dt = -1;
 
 	bool flying = false;
 
@@ -322,6 +322,20 @@ void ExtendedKalman::run()
 				
 				// process_IMU_data(&raw_imu, q, (float)raw_imu.accelerometer_integral_dt/1000000.0f);
 				
+				if(last_kalman_dt < 0) {
+					dt = 0.01;
+				}
+				else {
+					long now = hrt_absolute_time();
+					dt = (now - last_kalman_dt)/1000000.0;
+					last_kalman_dt = now;
+					if(dt > 0.05) {
+						std::cout << dt << std::endl;
+						dt = 0.01;
+					}
+					// std::cout << dt << std::endl;
+				}
+
 				orb_copy(ORB_ID(vehicle_attitude), attitude_sub_fd, &att);
 
 				q[0] = att.q[0];
@@ -373,7 +387,7 @@ void ExtendedKalman::run()
 						float x = 0;
 						float y = 0;
 						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
-						dt = 0.005; //(time_now - last_kalman_dt) / 1000000.0;
+						//dt = 0.005; //(time_now - last_kalman_dt) / 1000000.0;
 
 						//last_kalman_dt = time_now;
 						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
@@ -386,9 +400,9 @@ void ExtendedKalman::run()
 							position[0] = 0.0f; position[1] = 0.0f; position[2] = 0.0f;
 						}
 						acc_position_extrapolation(&raw_imu, pos_correction, velocity, position, roll, pitch, yaw);
-						x += pos_correction[0];
-						y += pos_correction[1];
-						altitude += pos_correction[2];
+						// x += pos_correction[0];
+						// y += pos_correction[1];
+						// altitude += pos_correction[2];
 						
 						/*
 							K = P * H' / R;
@@ -399,7 +413,7 @@ void ExtendedKalman::run()
 						*/
 
 						matrix::Matrix<float, 12, 12> F;
-						matrix::Matrix<float, 12, 1> xhatdot;
+						matrix::Matrix<float, 12, 1> xhatdot, xhat_t, dyt, dym;
 						matrix::Matrix<float, 12, 1> z;
 						F.setZero();
 						xhatdot.setZero();
@@ -408,14 +422,14 @@ void ExtendedKalman::run()
 						z(0,0) = roll;
 						z(1,0) = pitch;
 						z(2,0) = yaw;
-						z(3,0) = raw_imu.gyro_rad[0];
-						z(4,0) = -raw_imu.gyro_rad[1] / 1.2;
-						z(5,0) = -raw_imu.gyro_rad[2] / 1.3;
+						z(3,0) = -raw_imu.gyro_rad[0];
+						z(4,0) = -raw_imu.gyro_rad[1];
+						z(5,0) = -raw_imu.gyro_rad[2];
 						z(6,0) = raw_gps.vel_n_m_s;
-						z(7,0) = raw_gps.vel_e_m_s;
-						z(8,0) = raw_gps.vel_d_m_s;
+						z(7,0) = -raw_gps.vel_e_m_s;
+						z(8,0) = -raw_gps.vel_d_m_s;
 						z(9,0) = x;
-						z(10,0) = y;
+						z(10,0) = -y;
 						z(11,0) = altitude;
 
 						F(0,0) = xhat(4,0)*xhat(1,0); F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0); F(0,3) = 1; F(0,4) = xhat(0,0)*xhat(1,0); F(0,5) = xhat(1,0);
@@ -448,8 +462,59 @@ void ExtendedKalman::run()
 						matrix::Matrix<float, 12, 12> Pdot;
 						
 						K = P * HT * R_inv;
+
 						xhatdot = xhatdot + (K * (z - H * xhat));
-						xhat = xhat + (xhatdot * dt);
+						// Step 1
+						xhat_t = xhat + (xhatdot * (dt/2));
+						// Step 2
+						dyt(0,0) = xhat_t(3,0) + xhat_t(5,0)*xhat_t(1,0) + xhat_t(4,0)*xhat_t(0,0)*xhat_t(1,0);
+						dyt(1,0) = xhat_t(4,0) - xhat_t(5,0)*xhat_t(0,0);
+						dyt(2,0) = xhat_t(5,0) + xhat_t(4,0)*xhat_t(0,0);
+						dyt(3,0) = ((Iy-Iz)/Ix)*xhat_t(5,0)*xhat_t(4,0) + (tx_filtered/Ix);
+						dyt(4,0) = ((Iz-Ix)/Iy)*xhat_t(3,0)*xhat_t(5,0) + (ty_filtered/Iy);
+						dyt(5,0) = ((Ix-Iy)/Iz)*xhat_t(3,0)*xhat_t(4,0) + (tz_filtered/Iz);
+						dyt(6,0) = xhat_t(5,0)*xhat_t(7,0) - xhat_t(4,0)*xhat_t(8,0) - g*xhat_t(1,0);
+						dyt(7,0) = xhat_t(3,0)*xhat_t(8,0) - xhat_t(5,0)*xhat_t(6,0) + g*xhat_t(0,0);
+						dyt(8,0) = xhat_t(4,0)*xhat_t(6,0) - xhat_t(3,0)*xhat_t(7,0) + g - (ft_filtered/m);
+						dyt(9,0) = xhat_t(8,0)*(xhat_t(0,0)*xhat_t(2,0) + xhat_t(1,0)) - xhat_t(7,0)*(xhat_t(2,0) - xhat_t(0,0)*xhat_t(1,0)) + xhat_t(6,0);
+						dyt(10,0) = xhat_t(7,0)*(1 + xhat_t(0,0)*xhat_t(2,0)*xhat_t(1,0)) - xhat_t(8,0)*(xhat_t(0,0) - xhat_t(2,0)*xhat_t(1,0)) + xhat_t(6,0)*xhat_t(2,0);
+						dyt(11,0) = xhat_t(8,0) - xhat_t(6,0)*xhat_t(1,0) + xhat_t(7,0)*xhat_t(0,0);
+						dyt = dyt + K* (z - H*xhat_t);
+						xhat_t = xhat + dyt*(dt/2);
+						// Step 3
+						dym(0,0) = xhat_t(3,0) + xhat_t(5,0)*xhat_t(1,0) + xhat_t(4,0)*xhat_t(0,0)*xhat_t(1,0);
+						dym(1,0) = xhat_t(4,0) - xhat_t(5,0)*xhat_t(0,0);
+						dym(2,0) = xhat_t(5,0) + xhat_t(4,0)*xhat_t(0,0);
+						dym(3,0) = ((Iy-Iz)/Ix)*xhat_t(5,0)*xhat_t(4,0) + (tx_filtered/Ix);
+						dym(4,0) = ((Iz-Ix)/Iy)*xhat_t(3,0)*xhat_t(5,0) + (ty_filtered/Iy);
+						dym(5,0) = ((Ix-Iy)/Iz)*xhat_t(3,0)*xhat_t(4,0) + (tz_filtered/Iz);
+						dym(6,0) = xhat_t(5,0)*xhat_t(7,0) - xhat_t(4,0)*xhat_t(8,0) - g*xhat_t(1,0);
+						dym(7,0) = xhat_t(3,0)*xhat_t(8,0) - xhat_t(5,0)*xhat_t(6,0) + g*xhat_t(0,0);
+						dym(8,0) = xhat_t(4,0)*xhat_t(6,0) - xhat_t(3,0)*xhat_t(7,0) + g - (ft_filtered/m);
+						dym(9,0) = xhat_t(8,0)*(xhat_t(0,0)*xhat_t(2,0) + xhat_t(1,0)) - xhat_t(7,0)*(xhat_t(2,0) - xhat_t(0,0)*xhat_t(1,0)) + xhat_t(6,0);
+						dym(10,0) = xhat_t(7,0)*(1 + xhat_t(0,0)*xhat_t(2,0)*xhat_t(1,0)) - xhat_t(8,0)*(xhat_t(0,0) - xhat_t(2,0)*xhat_t(1,0)) + xhat_t(6,0)*xhat_t(2,0);
+						dym(11,0) = xhat_t(8,0) - xhat_t(6,0)*xhat_t(1,0) + xhat_t(7,0)*xhat_t(0,0);
+						dym = dym + K * (z - H*xhat_t);
+						xhat_t = xhat + dym*dt;
+						dym += dyt;
+						// Step 4
+						dyt(0,0) = xhat_t(3,0) + xhat_t(5,0)*xhat_t(1,0) + xhat_t(4,0)*xhat_t(0,0)*xhat_t(1,0);
+						dyt(1,0) = xhat_t(4,0) - xhat_t(5,0)*xhat_t(0,0);
+						dyt(2,0) = xhat_t(5,0) + xhat_t(4,0)*xhat_t(0,0);
+						dyt(3,0) = ((Iy-Iz)/Ix)*xhat_t(5,0)*xhat_t(4,0) + (tx_filtered/Ix);
+						dyt(4,0) = ((Iz-Ix)/Iy)*xhat_t(3,0)*xhat_t(5,0) + (ty_filtered/Iy);
+						dyt(5,0) = ((Ix-Iy)/Iz)*xhat_t(3,0)*xhat_t(4,0) + (tz_filtered/Iz);
+						dyt(6,0) = xhat_t(5,0)*xhat_t(7,0) - xhat_t(4,0)*xhat_t(8,0) - g*xhat_t(1,0);
+						dyt(7,0) = xhat_t(3,0)*xhat_t(8,0) - xhat_t(5,0)*xhat_t(6,0) + g*xhat_t(0,0);
+						dyt(8,0) = xhat_t(4,0)*xhat_t(6,0) - xhat_t(3,0)*xhat_t(7,0) + g - (ft_filtered/m);
+						dyt(9,0) = xhat_t(8,0)*(xhat_t(0,0)*xhat_t(2,0) + xhat_t(1,0)) - xhat_t(7,0)*(xhat_t(2,0) - xhat_t(0,0)*xhat_t(1,0)) + xhat_t(6,0);
+						dyt(10,0) = xhat_t(7,0)*(1 + xhat_t(0,0)*xhat_t(2,0)*xhat_t(1,0)) - xhat_t(8,0)*(xhat_t(0,0) - xhat_t(2,0)*xhat_t(1,0)) + xhat_t(6,0)*xhat_t(2,0);
+						dyt(11,0) = xhat_t(8,0) - xhat_t(6,0)*xhat_t(1,0) + xhat_t(7,0)*xhat_t(0,0);
+						dyt = dyt + K * (z - H*xhat_t);
+
+						xhat = xhat + (xhatdot + dyt + dym*2)*(dt/6);
+						//xhat = xhat + (xhatdot * dt);
+
 						Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
 						P = P + Pdot * dt;
 
@@ -458,15 +523,15 @@ void ExtendedKalman::run()
 						
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
-							.x = xhat(0,0),
-							.y = xhat(1,0),
-							.z = xhat(2,0),
+							.x = xhat(9,0),
+							.y = xhat(10,0),
+							.z = xhat(11,0),
 							.roll = xhat(0,0),
 							.pitch = xhat(1,0),
 							.yaw = xhat(2,0),
-							.x_gps = x,
-							.y_gps = y,
-							.z_gps = altitude
+							.x_gps = raw_gps.vel_n_m_s,
+							.y_gps = raw_gps.vel_e_m_s,
+							.z_gps = raw_gps.vel_d_m_s
 
 						};
 
@@ -496,10 +561,10 @@ void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, fl
 	// std::cout << act_out->output[0] << std::endl;
 	//PX4_INFO("Act:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3] );
 
-	ty = b*l*(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
-	tx = b*l*(pow(act_out->output[3], 2) - pow(act_out->output[2], 2));;
+	tx = b*l*(pow(act_out->output[1], 2) + pow(act_out->output[2], 2) - pow(act_out->output[0], 2) - pow(act_out->output[3], 2));
+	ty = b*l*(pow(act_out->output[1], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[2], 2));
 	tz = d*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) - pow(act_out->output[2], 2) - pow(act_out->output[3], 2));
-	ft = b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
+	ft = -13.7f*b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 
 	tx_filtered = _kf_tx.updateEstimate(tx);

@@ -203,7 +203,7 @@ void ExogenousKalman::run()
 	/* subscribe to actuator_outputs topic */
 	int act_out_sub_fd = orb_subscribe(ORB_ID(actuator_outputs));
 
-	int attitude_sub_fd = orb_subscribe(ORB_ID(vehicle_attitude));
+	int attitude_sub_fd = orb_subscribe(ORB_ID(vehicle_attitude_groundtruth));
 
 	/* limit the update rate to 5 Hz */
 	orb_set_interval(sensor_sub_fd, 10);
@@ -380,6 +380,7 @@ void ExogenousKalman::run()
 
 				if(last_kalman_dt < 0) {
 					dt = 0.01;
+					last_kalman_dt = hrt_absolute_time();
 				}
 				else {
 					long now = hrt_absolute_time();
@@ -582,6 +583,7 @@ void ExogenousKalman::run()
 
 						// Linear Kalman filter
 						
+						
 						F(0,3) = 1;
 						F(1,4) = 1;
 						F(2,5) = 1;
@@ -650,10 +652,10 @@ void ExogenousKalman::run()
 						linear_xhatdot(10,0) = xhat(7,0);
 						linear_xhatdot(11,0) = xhat(8,0);
 						*/
-						dt *= 2;
+						//dt *= 1.3;
 						linear_K = linear_P*HT*R_inv;
 
-						linear_xhatdot = linear_xhatdot + linear_K * (z - H*linear_xhat);
+						linear_xhatdot = linear_xhatdot + linear_K * (z - H*xhat);
 						//linear_xhat = linear_xhat + linear_xhatdot*dt;
 						// Step 1
 						linear_xhat_t = linear_xhat + linear_xhatdot*(dt/2);
@@ -772,9 +774,15 @@ void ExogenousKalman::run()
 							.x = xhat(0,0),
 							.y = xhat(1,0),
 							.z = xhat(2,0),
-							.x_gps = -raw_imu.gyro_rad[1],
-							.y_gps = pitch,
-							.z_gps = roll,
+							.a = raw_imu.gyro_rad[0],
+							.b= -raw_imu.gyro_rad[1],
+							.c= -raw_imu.gyro_rad[2],
+							.d = ty,
+							.e = xhat(10,0),
+							.f = xhat(11,0),
+							.x_gps = linear_xhat(9,0),
+							.y_gps = linear_xhat(10,0),
+							.z_gps = linear_xhat(11,0),
 							.roll = linear_xhat(0,0),
 							.pitch = linear_xhat(1,0),
 							.yaw = linear_xhat(2,0)
@@ -799,17 +807,17 @@ void ExogenousKalman::run()
 void ExogenousKalman::update_model_inputs(struct actuator_outputs_s * act_out, float &tx, float &ty, float &tz, float &ft) {
 	/* Convert drone thrust levels to tx, ty, tz and ft */
 	// PX4_INFO("Actuator Outputs:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3]);
-	float b = 1.3e-6;
+	float b = 1.3e-7;
 	float l = 0.25;
 	float d = 5e-8;
 
 	// std::cout << act_out->output[0] << std::endl;
 	//PX4_INFO("Act:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3] );
 
-	ty = b*l*(pow(act_out->output[1], 2) - pow(act_out->output[0], 2));
-	tx = b*l*(pow(act_out->output[3], 2) - pow(act_out->output[2], 2));;
+	tx = b*l*(pow(act_out->output[1], 2) + pow(act_out->output[2], 2) - pow(act_out->output[0], 2) - pow(act_out->output[3], 2));
+	ty = b*l*(pow(act_out->output[1], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[2], 2));
 	tz = d*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) - pow(act_out->output[2], 2) - pow(act_out->output[3], 2));
-	ft = b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
+	ft = -13.7f*b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 
 	tx_filtered = _kf_tx.updateEstimate(tx);
