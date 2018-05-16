@@ -38,6 +38,7 @@
 #include <controllib/block/BlockParam.hpp>
 #include "matrix/Matrix.hpp"
 #include <deque>
+#include "Kalman.h"
 
 extern "C" __EXPORT int exogenous_kalman_main(int argc, char *argv[]);
 
@@ -81,10 +82,23 @@ private:
 	void update_model_inputs(struct actuator_outputs_s *act_out, float &tx, float &ty, float &tz, float &ft);
 
 	double getVariance(const std::deque<double>& vec);
-	void MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, float az, float gx, float gy, float gz, float deltat)
+	void MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, float az, float gx, float gy, float gz, float deltat);
 	void MadgwickQuaternionUpdate(float q[], float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat);
 	void process_IMU_data(struct sensor_combined_s *raw_imu, float q[], float dt);
 
 	control::BlockParamInt _sys_autostart; /**< example parameter */
+	/*********************************/
+	/*         Simple Kalman         */
+	/*********************************/
+	Kalman _kf_tx = Kalman(0.003, 0.001, 0.1);
+	Kalman _kf_ty = Kalman(0.003, 0.001, 0.1);
+	Kalman _kf_tz = Kalman(0.003, 0.001, 0.1);
+	Kalman _kf_ft = Kalman(0.003, 0.001, 0.1);
+	Kalman _kf_pitch = Kalman(0.3, 0.1, 0.1);
+	float tx_filtered = 0;
+	float ty_filtered = 0;
+	float tz_filtered = 0;
+	float ft_filtered = 0;
+	/*********************************/
 };
 
