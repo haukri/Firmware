@@ -316,7 +316,7 @@ function(px4_add_common_flags)
 		-Wall
 		-Warray-bounds
 		-Wdisabled-optimization
-		-Werror
+		#-Werror
 		-Wextra
 		-Wfatal-errors
 		-Wfloat-equal
@@ -324,7 +324,7 @@ function(px4_add_common_flags)
 		-Winit-self
 		-Wlogical-op
 		-Wmissing-declarations
-		-Wmissing-field-initializers
+		#-Wmissing-field-initializers
 		#-Wmissing-include-dirs # TODO: fix and enable
 		-Wpointer-arith
 		-Wshadow
