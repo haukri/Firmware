@@ -229,9 +229,9 @@ void ExtendedKalman::run()
 	matrix::Matrix<float, 12, 12> H;
 	matrix::Matrix<float, 12, 12> HT;
 	for(int i = 0; i < 6; i++)
-		R_inv(i,i) = 10;
+		R_inv(i,i) = 400;
 	for(int i = 0; i < 12; i++) {
-		Q(i,i) = 0.01;
+		Q(i,i) = 0.1;
 		P(i,i) = 1;
 		H(i,i) = 1;
 		HT(i,i) = 1;
@@ -283,7 +283,7 @@ void ExtendedKalman::run()
 	std::deque<double> gps_check_vector;
 
 	std::default_random_engine generator;
-    std::normal_distribution<float> dist(0.0, 0.03);
+    std::normal_distribution<float> dist(0.0, 0.02);
 
 	float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion for Magwick's filter
 
@@ -400,8 +400,8 @@ void ExtendedKalman::run()
 							position[0] = 0.0f; position[1] = 0.0f; position[2] = 0.0f;
 						}
 						acc_position_extrapolation(&raw_imu, pos_correction, velocity, position, roll, pitch, yaw);
-						// x += pos_correction[0];
-						// y += pos_correction[1];
+						x += pos_correction[0];
+						y += pos_correction[1];
 						// altitude += pos_correction[2];
 						
 						/*
@@ -422,28 +422,17 @@ void ExtendedKalman::run()
 						z(0,0) = roll;
 						z(1,0) = pitch;
 						z(2,0) = yaw;
-						z(3,0) = -raw_imu.gyro_rad[0];
+						z(3,0) = raw_imu.gyro_rad[0];
 						z(4,0) = -raw_imu.gyro_rad[1];
 						z(5,0) = -raw_imu.gyro_rad[2];
-						z(6,0) = raw_gps.vel_n_m_s;
-						z(7,0) = -raw_gps.vel_e_m_s;
-						z(8,0) = -raw_gps.vel_d_m_s;
+						z(6,0) = cos(xhat(1,0))*cos(xhat(2,0))*raw_gps.vel_n_m_s+cos(xhat(1,0))*sin(xhat(2,0))*(-raw_gps.vel_e_m_s)-sin(xhat(1,0))*raw_gps.vel_d_m_s;
+						z(7,0) = (sin(xhat(1,0))*sin(xhat(0,0))*cos(xhat(2,0))-cos(xhat(1,0))*sin(xhat(2,0)))*raw_gps.vel_n_m_s+(sin(xhat(2,0))*sin(xhat(1,0))*sin(xhat(0,0))+cos(xhat(2,0))*cos(xhat(0,0)))*(-raw_gps.vel_e_m_s)+sin(xhat(0,0))*cos(xhat(1,0))*raw_gps.vel_d_m_s;
+						z(8,0) = (sin(xhat(1,0))*cos(xhat(1,0))*cos(xhat(2,0))+sin(xhat(2,0))*sin(xhat(0,0)))*raw_gps.vel_n_m_s+(sin(xhat(1,0))*sin(xhat(0,0))*cos(xhat(0,0))-cos(xhat(2,0))*sin(xhat(1,0)))*(-raw_gps.vel_e_m_s)+cos(xhat(0,0))*cos(xhat(1,0))*raw_gps.vel_d_m_s;
 						z(9,0) = x;
 						z(10,0) = -y;
 						z(11,0) = altitude;
 
-						F(0,0) = xhat(4,0)*xhat(1,0); F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0); F(0,3) = 1; F(0,4) = xhat(0,0)*xhat(1,0); F(0,5) = xhat(1,0);
-						F(1,0) = -xhat(5,0); F(1,4) = 1; F(1,5) = xhat(0,0);
-						F(2,0) = xhat(4,0); F(2,4) = xhat(0,0); F(2,5) = 1;
-						F(3,4) = ((Iy-Iz)/Ix)*xhat(5,0); F(3,5) = ((Iy-Iz)/Ix)*xhat(4,0);
-						F(4,3) = ((Iz-Ix)/Iy)*xhat(5,0); F(4,5) = ((Iz-Ix)/Iy)*xhat(3,0);
-						F(5,3) = ((Ix-Iy)/Iz)*xhat(4,0); F(5,4) = ((Ix-Iy)/Iz)*xhat(3,0);
-						F(6,1) = -g; F(6,4) = -xhat(8,0); F(6,5) = xhat(7,0); F(6,7) = xhat(5,0); F(6,8) = -xhat(4,0);
-						F(7,0) = g; F(7,3) = xhat(8,0); F(7,5) = -xhat(6,0); F(7,6) = -xhat(5,0); F(7,8) = xhat(3,0);
-						F(8,3) = -xhat(7,0); F(8,4) = xhat(6,0); F(8,6) = xhat(4,0); F(8,7) = -xhat(3,0);
-						F(9,0) = xhat(8,0)*xhat(2,0)+xhat(7,0)*xhat(1,0); F(9,1) = xhat(8,0)+xhat(7,0)*xhat(1,0); F(9,2) = xhat(8,0)*xhat(0,0)-xhat(7,0); F(9,6) = 1; F(9,7) = -xhat(2,0)+xhat(0,0)*xhat(1,0); F(9,8) = xhat(0,0)*xhat(2,0)+xhat(1,0);
-						F(10,0) = xhat(7,0)*xhat(2,0)*xhat(1,0)-xhat(8,0); F(10,1) = xhat(7,0)*xhat(0,0)*xhat(2,0)+xhat(8,0)*xhat(2,0); F(10,2) = xhat(7,0)*xhat(0,0)*xhat(1,0)+xhat(8,0)*xhat(1,0)+xhat(6,0); F(10,6) = xhat(2,0); F(10,7) = 1+xhat(0,0)*xhat(1,0)+xhat(2,0); F(10,8) = -xhat(0,0)+xhat(2,0)*xhat(1,0);
-						F(11,0) = xhat(7,0); F(11,1) = -xhat(6,0); F(11,6) = -xhat(1,0); F(11,7) = xhat(0,0); F(11,8) = 1;
+
 
 						xhatdot(0,0) = xhat(3,0) + xhat(5,0)*xhat(1,0) + xhat(4,0)*xhat(0,0)*xhat(1,0);
 						xhatdot(1,0) = xhat(4,0) - xhat(5,0)*xhat(0,0);
@@ -512,26 +501,39 @@ void ExtendedKalman::run()
 						dyt(11,0) = xhat_t(8,0) - xhat_t(6,0)*xhat_t(1,0) + xhat_t(7,0)*xhat_t(0,0);
 						dyt = dyt + K * (z - H*xhat_t);
 
-						xhat = xhat + (xhatdot + dyt + dym*2)*(dt/6);
-						//xhat = xhat + (xhatdot * dt);
+						//xhat = xhat + (xhatdot + dyt + dym*2)*(dt/6);
+						xhat = xhat + (xhatdot * dt);
+
+						F(0,0) = xhat(4,0)*xhat(1,0); F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0); F(0,3) = 1; F(0,4) = xhat(0,0)*xhat(1,0); F(0,5) = xhat(1,0);
+						F(1,0) = -xhat(5,0); F(1,4) = 1; F(1,5) = xhat(0,0);
+						F(2,0) = xhat(4,0); F(2,4) = xhat(0,0); F(2,5) = 1;
+						F(3,4) = ((Iy-Iz)/Ix)*xhat(5,0); F(3,5) = ((Iy-Iz)/Ix)*xhat(4,0);
+						F(4,3) = ((Iz-Ix)/Iy)*xhat(5,0); F(4,5) = ((Iz-Ix)/Iy)*xhat(3,0);
+						F(5,3) = ((Ix-Iy)/Iz)*xhat(4,0); F(5,4) = ((Ix-Iy)/Iz)*xhat(3,0);
+						F(6,1) = -g; F(6,4) = -xhat(8,0); F(6,5) = xhat(7,0); F(6,7) = xhat(5,0); F(6,8) = -xhat(4,0);
+						F(7,0) = g; F(7,3) = xhat(8,0); F(7,5) = -xhat(6,0); F(7,6) = -xhat(5,0); F(7,8) = xhat(3,0);
+						F(8,3) = -xhat(7,0); F(8,4) = xhat(6,0); F(8,6) = xhat(4,0); F(8,7) = -xhat(3,0);
+						F(9,0) = xhat(8,0)*xhat(2,0)+xhat(7,0)*xhat(1,0); F(9,1) = xhat(8,0)+xhat(7,0)*xhat(1,0); F(9,2) = xhat(8,0)*xhat(0,0)-xhat(7,0); F(9,6) = 1; F(9,7) = -xhat(2,0)+xhat(0,0)*xhat(1,0); F(9,8) = xhat(0,0)*xhat(2,0)+xhat(1,0);
+						F(10,0) = xhat(7,0)*xhat(2,0)*xhat(1,0)-xhat(8,0); F(10,1) = xhat(7,0)*xhat(0,0)*xhat(2,0)+xhat(8,0)*xhat(2,0); F(10,2) = xhat(7,0)*xhat(0,0)*xhat(1,0)+xhat(8,0)*xhat(1,0)+xhat(6,0); F(10,6) = xhat(2,0); F(10,7) = 1+xhat(0,0)*xhat(1,0)+xhat(2,0); F(10,8) = -xhat(0,0)+xhat(2,0)*xhat(1,0);
+						F(11,0) = xhat(7,0); F(11,1) = -xhat(6,0); F(11,6) = -xhat(1,0); F(11,7) = xhat(0,0); F(11,8) = 1;
 
 						Pdot = F * P + P * F.transpose() + Q - P * HT * R_inv * H * P;
-						P = P + Pdot * dt;
+						P = P + Pdot * dt/10.0;
 
 						//PX4_INFO("EKF:\t%8.4f",
 						//(double)xhat(11,0));
 						
 						extended_kalman_s extended_kalman = {
 							.timestamp = hrt_absolute_time(),
-							.x = xhat(9,0),
-							.y = xhat(10,0),
-							.z = xhat(11,0),
+							.x = x,
+							.y = y,
+							.z = altitude,
 							.roll = xhat(0,0),
 							.pitch = xhat(1,0),
 							.yaw = xhat(2,0),
-							.x_gps = raw_gps.vel_n_m_s,
-							.y_gps = raw_gps.vel_e_m_s,
-							.z_gps = raw_gps.vel_d_m_s
+							.x_gps = xhat(9,0),
+							.y_gps = xhat(10,0),
+							.z_gps = xhat(11,0)
 
 						};
 
@@ -554,7 +556,7 @@ void ExtendedKalman::run()
 void ExtendedKalman::update_model_inputs(struct actuator_outputs_s * act_out, float &tx, float &ty, float &tz, float &ft) {
 	/* Convert drone thrust levels to tx, ty, tz and ft */
 	// PX4_INFO("Actuator Outputs:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3]);
-	float b = 1.1e-7;
+	float b = 4e-8;
 	float l = 0.25;
 	float d = 5e-8;
 
@@ -605,7 +607,7 @@ void ExtendedKalman::publish_extended_kalman(orb_advert_t &extended_kalman_pub, 
 
 void ExtendedKalman::acc_position_extrapolation(struct sensor_combined_s *raw_imu, float pos_correction[], float velocity[], float position[], float roll, float pitch, float yaw){
 	//float newVelocity[3] = {0.0f, 0.0f, 0.0f};
-	float An = cos(pitch)*cos(yaw)*raw_imu->accelerometer_m_s2[0]+(sin(pitch)*sin(roll)*cos(yaw)-cos(pitch)*sin(yaw))*raw_imu->accelerometer_m_s2[1]+(sin(pitch)*cos(pitch)*cos(yaw)+sin(yaw)*sin(roll))*raw_imu->accelerometer_m_s2[2];
+	float An = cos(pitch)*cos(yaw)*raw_imu->accelerometer_m_s2[0]+(sin(pitch)*sin(roll)*cos(yaw)-cos(pitch)*sin(yaw))*raw_imu->accelerometer_m_s2[1]+(sin(pitch)*cos(roll)*cos(yaw)+sin(yaw)*sin(roll))*raw_imu->accelerometer_m_s2[2];
 	float Ae = cos(pitch)*sin(yaw)*raw_imu->accelerometer_m_s2[0]+(sin(yaw)*sin(pitch)*sin(roll)+cos(yaw)*cos(roll))*raw_imu->accelerometer_m_s2[1]+(sin(pitch)*sin(roll)*cos(roll)-cos(yaw)*sin(pitch))*raw_imu->accelerometer_m_s2[2];
 	float Ad = -sin(pitch)*raw_imu->accelerometer_m_s2[0]+sin(roll)*cos(pitch)*raw_imu->accelerometer_m_s2[1]+cos(roll)*cos(pitch)*raw_imu->accelerometer_m_s2[2];
 	float dt = (float)raw_imu->accelerometer_integral_dt / 1000000;
