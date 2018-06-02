@@ -71,12 +71,13 @@ list_of_files = glob.glob(latest_file + '/*.ulg')
 latest_file = max(list_of_files, key=os.path.getctime)
 print(os.path.splitext(latest_file)[0])
 
-convert_ulog2csv(latest_file, 'vehicle_local_position,vehicle_local_position_groundtruth,sensor_combined,extended_kalman,actuator_outputs,vehicle_attitude,vehicle_attitude_groundtruth,exogenous_kalman', False, ',')
+convert_ulog2csv(latest_file, 'vehicle_local_position,vehicle_local_position_groundtruth,sensor_combined,extended_kalman,actuator_outputs,vehicle_attitude,vehicle_gps_position,vehicle_attitude_groundtruth,exogenous_kalman,actuator_controls_0', False, ',')
 
 pos = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_local_position_0.csv')
 truepos = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_local_position_groundtruth_0.csv')
 kalman = pd.read_csv(os.path.splitext(latest_file)[0] + '_extended_kalman_0.csv')
 actuators = pd.read_csv(os.path.splitext(latest_file)[0] + '_actuator_outputs_0.csv')
+controls = pd.read_csv(os.path.splitext(latest_file)[0] + '_actuator_controls_0_0.csv')
 trueatt = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_attitude_groundtruth_0.csv')
 exogenous = pd.read_csv(os.path.splitext(latest_file)[0] + '_exogenous_kalman_0.csv')
 attitude = pd.read_csv(os.path.splitext(latest_file)[0] + '_vehicle_attitude_0.csv')
@@ -138,39 +139,123 @@ for r in ekfroll:
     temproll.append(r)
 ekfroll = temproll
 
-# plt.ylim(0.09, 0.27)
-# plt.xlim(0, 12)
+plt.ylim(-0.01, 0.01)
+plt.xlim(0, 33)
 plt.xlabel('Time (seconds)')
-plt.ylabel('Pitch (rad)')
+plt.ylabel('Difference (rad)')
 
-offset = 35.5
+offset = 19
+
+plt.grid()
 
 # plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['x_gps'], color='b', linewidth=1.5, label='Z Speed')
 # plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['z_gps'], color='purple', linewidth=1.5, label='Altitude GPS')
 
 # plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['x'], color='g', linewidth=1.5, label='Nonlinear Observer Pitch')
 # plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['pitch'], color='purple', linewidth=1.5, label='XKF Pitch')
-# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='b', linewidth=1.5, label='observer Pitch')
-# plt.plot([x/1000000.0 - offset for x in truepos['timestamp']], truepos['y'], color='g', linewidth=1.5, label='observer Pitch')
-plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='b', linewidth=1.5, label='observer Pitch')
-plt.plot([x/1000000.0 - offset for x in sensors['timestamp']], [x for x in sensors['accelerometer_m_s2[0]']], color='b', linewidth=1.5, label='observer Pitch')
-plt.plot([x/1000000.0 - offset for x in sensors['timestamp']], [x for x in sensors['accelerometer_m_s2[1]']], color='g', linewidth=1.5, label='observer Pitch')
-plt.plot([x/1000000.0 - offset for x in sensors['timestamp']], [x for x in sensors['accelerometer_m_s2[2]']], color='r', linewidth=1.5, label='observer Pitch')
-# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y_gps'], color='r', linewidth=1.5, label='observer Pitch')
-# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['b'], color='y', linewidth=1.5, label='observer Pitch')
-# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='b', linewidth=1.5, label='Gyro pitch')
-# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y_gps'], color='lightseagreen', linewidth=1.5, label='ty filtered')
-# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['z_gps'], color='b', linewidth=1.5, label='ty')
-# plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['pitch'], color='b', linewidth=1.5, label='EKF pitch')
-plt.plot([x/1000000.0 - offset for x in trueatt['timestamp']], truepitch, color='r', linewidth=1.5, label='True pitch')
-# plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfpitch, color='g', linewidth=1.5, label='EKF2 pitch')
 
-# plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['yaw'], color='b', linewidth=1.5, label='EKF filtered yaw')
+# plt.scatter([x/1000000.0 - offset for x in kalman['timestamp']], kalman['y'], color='orange', linewidth=0.01, label='Extrapolation')
 
-# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['yaw'], color='g', linewidth=1.5, label='XKF filtered yaw')
+# plt.plot([x/1000000.0 - offset for x in truepos['timestamp']], truepos['x'], color='g', linewidth=1.5, label='True X')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['d'], color='b', linewidth=1.5, label='Raw')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['e'], color='r', linewidth=1.5, label='Observer')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y_gps'], color='g', linewidth=1.5, label='XKF X Position')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['c'], color='b', linewidth=1.5, label='Xkf')
+
+# ---------------------------- X Position ----------------------------- #
+x_gps = []
+x_gps_timestamp = []
+last_x = -9999
+for (time, x) in zip(exogenous['timestamp'], exogenous['a']):
+    if x != last_x:
+        x_gps.append(x)
+        x_gps_timestamp.append(time)
+        last_x = x
+
+# plt.plot([x/1000000.0 - offset for x in truepos['timestamp']], truepos['x'], color='r', linewidth=1.5, label='True X Position')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['x_gps'], color='g', linewidth=1.5, label='XKF X Position')
+# plt.scatter([x/1000000.0 - offset for x in x_gps_timestamp], x_gps, color='orange', linewidth=1.5, label='GPS Data Points')
+
+# ---------------------------- X Position ----------------------------- #
+
+# ---------------------------- Y Position ----------------------------- #
+y_gps = []
+y_gps_timestamp = []
+last_y = -9999
+for (time, y) in zip(exogenous['timestamp'], exogenous['c']):
+    if y != last_y:
+        y_gps.append(-y)
+        y_gps_timestamp.append(time)
+        last_y = y
+
+# plt.plot([x/1000000.0 - offset for x in truepos['timestamp']], [-x for x in truepos['y']], color='r', linewidth=1.5, label='True Y Position')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y_gps'], color='g', linewidth=1.5, label='XKF Y Position')
+# plt.scatter([x/1000000.0 - offset for x in y_gps_timestamp], y_gps, color='orange', linewidth=1.5, label='GPS Data Points')
+# ---------------------------- Y Position ----------------------------- #
+
+# ---------------------------- Z Position ----------------------------- #
+# plt.plot([x/1000000.0 - offset for x in truepos['timestamp']], [-x for x in truepos['z']], color='r', linewidth=1.5, label='True Z Position')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], [-x for x in exogenous['z_gps']], color='g', linewidth=1.5, label='XKF Z Position')
+# ---------------------------- Z Position ----------------------------- #
+
+# ---------------------------- XY Position ----------------------------- #
+# plt.plot(exogenous['x_gps'], exogenous['y_gps'], color='g', linewidth=1.5, label='XKF XY Position')
+# plt.plot(truepos['x'], [-x for x in truepos['y']], color='r', linewidth=1.5, label='True XY Position')
+# plt.scatter(x_gps, y_gps, color='orange', linewidth=1.5, label='GPS Data Points')
+# ---------------------------- XY Position ----------------------------- #
+
+
+# ------------------------------- PITCH ------------------------------ #
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='purple', linewidth=2, label='Observer Pitch')
+# plt.plot([x/1000000.0 - offset for x in trueatt['timestamp']], truepitch, color='r', linewidth=1.5, label='True Pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['pitch'], color='g', linewidth=1.5, label='XKF Pitch')
+# plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['pitch'], color='b', linewidth=1.5, label='EKF Pitch')
+# plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfpitch, color='b', linewidth=2, label='EKF2 pitch')
+# ------------------------------- PITCH ------------------------------ #
+
+# ------------------------------- ROLL ------------------------------ #
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['x'], color='purple', linewidth=1.5, label='Observer Roll')
+# plt.plot([x/1000000.0 - offset for x in trueatt['timestamp']], trueroll, color='r', linewidth=1.5, label='True Roll')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['roll'], color='g', linewidth=1.5, label='XKF Roll')
+# plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['roll'], color='b', linewidth=1.5, label='EKF Roll')
+# plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfroll, color='b', linewidth=1.5, label='EKF2 Roll')
+# ------------------------------- ROLL ------------------------------ #
+
+# ------------------------------- YAW ------------------------------ #
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['z'], color='purple', linewidth=1.5, label='Observer Yaw')
+# plt.plot([x/1000000.0 - offset for x in trueatt['timestamp']], trueyaw, color='r', linewidth=1.5, label='True Yaw')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['yaw'], color='g', linewidth=1.5, label='XKF Yaw')
+# plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['yaw'], color='b', linewidth=1.5, label='EKF Yaw')
+# plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfyaw, color='b', linewidth=1.5, label='EKF2 pitch')
+# ------------------------------- YAW ------------------------------ #
+
+# ------------------------------- DIFFERENCE ------------------------------ #
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], [x-y for (x, y) in zip(exogenous['roll'], exogenous['g'])], color='r', linewidth=1.5, label='Roll Error')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], [x-y for (x, y) in zip(exogenous['yaw'], exogenous['i'])], color='b', linewidth=1.5, label='Yaw Error')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], [x-y for (x, y) in zip(exogenous['pitch'], exogenous['h'])], color='g', linewidth=1.5, label='Pitch Error')
+# ------------------------------- DIFFERENCE ------------------------------ #
+
+# ------------------------------- EXTRAPOLATION ------------------------------ #
+# plt.plot([x/1000000.0 - offset for x in truepos['timestamp']], truepos['x'], color='r', linewidth=1.5, label='True X Position')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['a'], color='b', linewidth=2.5, label='Zero Order Hold GPS X Position')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['g'], color='g', linewidth=2.5, label='Extrapolated GPS X Position')
+# plt.scatter([x/1000000.0 - offset for x in x_gps_timestamp], x_gps, color='orange', linewidth=2, label='GPS Data Points', zorder=10)
+# ------------------------------- EXTRAPOLATION ------------------------------ #
+
+# ------------------------------- RK4 VS EULER ------------------------------ #
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y'], color='purple', linewidth=2, label='Observer Pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], [x-y for (x, y) in zip(exogenous['roll'], exogenous['g'])], color='r', linewidth=1.5, label='Roll Error RK4')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], [x-y for (x, y) in zip(exogenous['x_gps'], exogenous['g'])], color='g', linewidth=1.5, label='Roll Error Euler')
+plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], [x-y for (x, y) in zip(exogenous['x_gps'], exogenous['roll'])], color='r', linewidth=1.5, label='Euler - RK4')
+# plt.plot([x/1000000.0 - offset for x in trueatt['timestamp']], truepitch, color='r', linewidth=1.5, label='True Pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['pitch'], color='g', linewidth=1.5, label='XKF Pitch')
+# plt.plot([x/1000000.0 - offset for x in exogenous['timestamp']], exogenous['y_gps'], color='b', linewidth=1.5, label='XKF Pitch')
+# plt.plot([x/1000000.0 - offset for x in kalman['timestamp']], kalman['pitch'], color='b', linewidth=1.5, label='EKF Pitch')
+# plt.plot([x/1000000.0 - offset for x in attitude['timestamp']], ekfpitch, color='b', linewidth=2, label='EKF2 pitch')
+# ------------------------------- RK4 VS EULER ------------------------------ #
 
 plt.legend(loc='upper left')
 
-# plt.savefig(script_dir + '/foo.png', bbox_inches='tight', dpi=300)
+plt.savefig(script_dir + '/figures/euler_vs_rk4_difference.png', bbox_inches='tight', dpi=300)
 
 plt.show()

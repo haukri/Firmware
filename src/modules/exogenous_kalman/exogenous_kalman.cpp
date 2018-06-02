@@ -60,6 +60,7 @@
 #include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/vehicle_gps_position.h>
 #include <uORB/topics/exogenous_kalman.h>
+#include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/actuator_outputs.h>
 
 #define beta 15.2f
@@ -200,13 +201,16 @@ void ExogenousKalman::run()
 	/* subscribe to vehicle_gps_position topic */
 	int gps_sub_fd = orb_subscribe(ORB_ID(vehicle_gps_position));
 
+	/* 									*/
+	int loc_pos_sub_fd = orb_subscribe((ORB_ID(vehicle_local_position_groundtruth)));
+
 	/* subscribe to actuator_outputs topic */
 	int act_out_sub_fd = orb_subscribe(ORB_ID(actuator_outputs));
 
 	int attitude_sub_fd = orb_subscribe(ORB_ID(vehicle_attitude_groundtruth));
 
 	/* limit the update rate to 5 Hz */
-	orb_set_interval(sensor_sub_fd, 10);
+	// orb_set_interval(sensor_sub_fd, 10);
 
 	/* one could wait for multiple topics with this technique, just using one here */
 	px4_pollfd_struct_t fds[] = {
@@ -217,12 +221,15 @@ void ExogenousKalman::run()
   	bool updated = false;
  	bool first_gps_run = true;
   	struct vehicle_gps_position_s ref_gps;
+	struct vehicle_local_position_s true_pos;
 	struct vehicle_attitude_s att;
   	struct map_projection_reference_s mp_ref = {};
 	orb_advert_t exogenous_kalman_pub = nullptr;
 
 	matrix::Matrix<float, 12, 1> xhat;
 	xhat.setZero();
+	matrix::Matrix<float, 12, 1> euler_xhat;
+	euler_xhat.setZero();
 	matrix::Matrix<float, 12, 12> P;
 	matrix::Matrix<float, 12, 12> R_inv;
 	matrix::Matrix<float, 12, 12> R;
@@ -230,14 +237,18 @@ void ExogenousKalman::run()
 	matrix::Matrix<float, 12, 12> I;
 	matrix::Matrix<float, 12, 12> H;
 	matrix::Matrix<float, 12, 12> HT;
-	for(int i = 0; i < 12; i++) {
-		R_inv(i,i) = 40;
-		R(i,i) = 0.025;
+	float r = 600; // 400
+	for(int i = 0; i < 6; i++) {
+		R_inv(i,i) = r;
+		R_inv(i+6,i+6) = r/1.0;
+		R(i,i) = 1.0/r;
+		R(i+6,i+6) = 1.0/r/1.0;
+		Q(i,i) = 10;
+		Q(i+6,i+6) = 0.9;
 	}
 
 	for(int i = 0; i < 12; i++) {
-		Q(i,i) = 0.4;
-		P(i,i) = 1;
+		P(i,i) = 20;
 		I(i,i) = 1;
 		H(i,i) = 1;
 		HT(i,i) = 1;
@@ -252,6 +263,8 @@ void ExogenousKalman::run()
 	// Linear Kalman filter
 	matrix::Matrix<float, 12, 1> linear_xhat;
 	linear_xhat.setZero();
+	matrix::Matrix<float, 12, 1> euler_linear_xhat;
+	euler_linear_xhat.setZero();
 	matrix::Matrix<float, 12, 12> linear_P;
 	for(int i = 0; i < 12; i++) {
 		linear_P(i,i) = 1;
@@ -272,8 +285,18 @@ void ExogenousKalman::run()
 	float pitch = 0;
 	float yaw = 0;
 
+	float roll_true = 0;
+	float pitch_true = 0;
+	float yaw_true = 0;
+
 	float dt = 0.2;
 	float last_kalman_dt = -1;
+	float gps_dt = 0.2;
+	float last_gps_dt = -1;
+
+	float pos_correction[3] = {0.0f, 0.0f, 0.0f};
+	float velocity[3] = {0.0f, 0.0f, 0.0f};
+	float position[3] = {0.0f, 0.0f, 0.0f};
 
 	bool flying = false;
 
@@ -283,11 +306,20 @@ void ExogenousKalman::run()
 	float true_yaw = 0;
 
 
+	matrix::Matrix<float, 12, 12> gps_mask;
+	matrix::Matrix<float, 12, 12> imu_mask;
+	gps_mask.setZero();
+	imu_mask.setZero();
+	for(int i = 0; i < 6; i++) {
+		gps_mask(i+6,i+6) = 1;
+		imu_mask(i,i) = 1;
+	}
+
 	matrix::Matrix<float, 4, 1> test;
 	matrix::Matrix<float, 12, 12> K_observer;
 	matrix::Matrix<float, 12, 12> P_observer;
 	P_observer.setZero();
-	double observer_beta = 2.3;
+	double observer_beta = 2.2; // 2.2
 	/*
 	P_observer(0,0) = 2.4000 * observer_beta;
 	P_observer(0,3) = -0.8000 * observer_beta;
@@ -314,6 +346,7 @@ void ExogenousKalman::run()
 	P_observer(11,8) = 0.4000 * observer_beta;
 	P_observer(11,11) = 1.2000 * observer_beta;
 	*/
+	int beta_factor = 8;
 	P_observer(0,0) = 1.5000 * observer_beta;
 	P_observer(0,3) = 0.5000 * observer_beta;
 	P_observer(1,1) = 1.5000 * observer_beta;
@@ -326,24 +359,29 @@ void ExogenousKalman::run()
 	P_observer(4,4) = 0.5000 * observer_beta;
 	P_observer(5,2) = 0.5000 * observer_beta;
 	P_observer(5,5) = 0.5000 * observer_beta;
-	P_observer(6,6) = 1.0000 * observer_beta;
-	P_observer(6,9) = 1.0000 * observer_beta;
-	P_observer(7,7) = 1.0000 * observer_beta;
-	P_observer(7,10) = 1.0000 * observer_beta;
-	P_observer(8,8) = 1.0000 * observer_beta;
-	P_observer(8,11) = 1.0000 * observer_beta;
-	P_observer(9,6) = 1.0000 * observer_beta;
-	P_observer(9,9) = 2.0000 * observer_beta;
-	P_observer(10,7) = 1.0000 * observer_beta;
-	P_observer(10,10) = 2.0000 * observer_beta;
-	P_observer(11,8) = 1.0000 * observer_beta;
-	P_observer(11,11) = 2.0000 * observer_beta;
+	P_observer(6,6) = 1.0000 * observer_beta*beta_factor;
+	P_observer(6,9) = 1.0000 * observer_beta*beta_factor;
+	P_observer(7,7) = 1.0000 * observer_beta*beta_factor;
+	P_observer(7,10) = 1.0000 * observer_beta*beta_factor;
+	P_observer(8,8) = 1.0000 * observer_beta*beta_factor;
+	P_observer(8,11) = 1.0000 * observer_beta*beta_factor;
+	P_observer(9,6) = 1.0000 * observer_beta*beta_factor;
+	P_observer(9,9) = 2.0000 * observer_beta*beta_factor;
+	P_observer(10,7) = 1.0000 * observer_beta*beta_factor;
+	P_observer(10,10) = 2.0000 * observer_beta*beta_factor;
+	P_observer(11,8) = 1.0000 * observer_beta*beta_factor;
+	P_observer(11,11) = 2.0000 * observer_beta*beta_factor;
 	K_observer = P_observer*HT;
 
 	std::default_random_engine generator;
     std::normal_distribution<float> dist(0.0, 0.02);
 
 	float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion for Magwick's filter
+	
+	float x = 0;
+	float y = 0;
+	float x_gps = 0;
+	float y_gps = 0;
 
 	while(!should_exit()) {
 		/* wait for sensor update of 1 file descriptor for 1000 ms (1 second) */
@@ -410,6 +448,10 @@ void ExogenousKalman::run()
 				pitch = asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
 				roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);	
 				
+				yaw_true = yaw;
+				pitch_true = pitch;
+				roll_true = roll;
+
 				/*
 				roll += 3.14159f;
 				if(roll > 3.14159f) {
@@ -479,11 +521,42 @@ void ExogenousKalman::run()
 						}
 					}
 					else if(flying) {
-						float x = 0;
-						float y = 0;
-						orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
-						map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
+
+						bool update_gps = false;
+						orb_check(gps_sub_fd, &update_gps);
+						if(update_gps) {
+							if(last_gps_dt < 0) {
+								gps_dt = 0.2;
+								last_gps_dt = hrt_absolute_time();
+							}
+							else {
+								long now = hrt_absolute_time();
+								gps_dt = (now - last_gps_dt)/1000000.0;
+								last_gps_dt = now;
+							}
+							orb_copy(ORB_ID(vehicle_local_position_groundtruth), loc_pos_sub_fd, &true_pos);
+							x_gps = true_pos.x + dist(generator)*20;
+							y_gps = true_pos.y + dist(generator)*20;
+							orb_copy(ORB_ID(vehicle_gps_position), gps_sub_fd, &raw_gps);
+						}
+
+						x = x_gps;
+						y = y_gps;
+
+						// map_projection_project(&mp_ref, raw_gps.lat*10e-8f, raw_gps.lon*10e-8f, &x, &y);
 						float altitude = -(raw_gps.alt - ref_gps.alt) / 1000.0;
+
+						y = -y;
+						// Velocity extrapolation on GPS position (additive)
+						if (update_gps){ 
+							velocity[0] = raw_gps.vel_n_m_s; velocity[1] = -raw_gps.vel_e_m_s; velocity[2] = raw_gps.vel_d_m_s;
+							//velocity[0] = 0.0f; velocity[1] = 0.0f; velocity[2] = 0.0f;
+							position[0] = 0.0f; position[1] = 0.0f; position[2] = 0.0f;
+						}
+						acc_position_extrapolation(&raw_imu, pos_correction, velocity, position, linear_xhat(0,0), linear_xhat(1,0), linear_xhat(2,0), dt);
+						x += pos_correction[0];
+						y += pos_correction[1];
+						altitude += pos_correction[2];
 
 						/*
 							K = P * H' / R;
@@ -493,10 +566,8 @@ void ExogenousKalman::run()
 							P = P + Pdot * dt;
 						*/
 
-						matrix::Matrix<float, 12, 12> F;
 						matrix::Matrix<float, 12, 1> xhatdot, xhat_t, dyt, dym;
 						matrix::Matrix<float, 12, 1> z;
-						F.setZero();
 						xhatdot.setZero();
 						z.setZero();
 
@@ -506,12 +577,27 @@ void ExogenousKalman::run()
 						z(3,0) = raw_imu.gyro_rad[0];
 						z(4,0) = -raw_imu.gyro_rad[1];
 						z(5,0) = -raw_imu.gyro_rad[2];
-						z(6,0) = raw_gps.vel_n_m_s;
-						z(7,0) = raw_gps.vel_e_m_s;
-						z(8,0) = raw_gps.vel_d_m_s;
+						z(6,0) = 0; // cos(linear_xhat(1,0))*cos(linear_xhat(2,0))*raw_gps.vel_n_m_s+cos(linear_xhat(1,0))*sin(linear_xhat(2,0))*(-raw_gps.vel_e_m_s)-sin(linear_xhat(1,0))*raw_gps.vel_d_m_s;
+						z(7,0) = 0; // (sin(linear_xhat(1,0))*sin(linear_xhat(0,0))*cos(linear_xhat(2,0))-cos(linear_xhat(1,0))*sin(linear_xhat(2,0)))*raw_gps.vel_n_m_s+(sin(linear_xhat(2,0))*sin(linear_xhat(1,0))*sin(linear_xhat(0,0))+cos(linear_xhat(2,0))*cos(linear_xhat(0,0)))*(-raw_gps.vel_e_m_s)+sin(linear_xhat(0,0))*cos(linear_xhat(1,0))*raw_gps.vel_d_m_s;
+						z(8,0) = 0; // (sin(linear_xhat(1,0))*cos(linear_xhat(1,0))*cos(linear_xhat(2,0))+sin(linear_xhat(2,0))*sin(linear_xhat(0,0)))*raw_gps.vel_n_m_s+(sin(linear_xhat(1,0))*sin(linear_xhat(0,0))*cos(linear_xhat(0,0))-cos(linear_xhat(2,0))*sin(linear_xhat(1,0)))*(-raw_gps.vel_e_m_s)+cos(linear_xhat(0,0))*cos(linear_xhat(1,0))*raw_gps.vel_d_m_s;
 						z(9,0) = x;
 						z(10,0) = y;
 						z(11,0) = altitude;
+
+						xhatdot(0,0) = euler_xhat(3,0) + euler_xhat(5,0)*euler_xhat(1,0) + euler_xhat(4,0)*euler_xhat(0,0)*euler_xhat(1,0);
+						xhatdot(1,0) = euler_xhat(4,0) - euler_xhat(5,0)*euler_xhat(0,0);
+						xhatdot(2,0) = euler_xhat(5,0) + euler_xhat(4,0)*euler_xhat(0,0);
+						xhatdot(3,0) = ((Iy-Iz)/Ix)*euler_xhat(5,0)*euler_xhat(4,0) + (tx/Ix);
+						xhatdot(4,0) = ((Iz-Ix)/Iy)*euler_xhat(3,0)*euler_xhat(5,0) + (ty/Iy);
+						xhatdot(5,0) = ((Ix-Iy)/Iz)*euler_xhat(3,0)*euler_xhat(4,0) + (tz/Iz);
+						xhatdot(6,0) = euler_xhat(5,0)*euler_xhat(7,0) - euler_xhat(4,0)*euler_xhat(8,0) - g*euler_xhat(1,0);
+						xhatdot(7,0) = euler_xhat(3,0)*euler_xhat(8,0) - euler_xhat(5,0)*euler_xhat(6,0) + g*euler_xhat(0,0);
+						xhatdot(8,0) = euler_xhat(4,0)*euler_xhat(6,0) - euler_xhat(3,0)*euler_xhat(7,0) + g - (ft/m);
+						xhatdot(9,0) = euler_xhat(8,0)*(euler_xhat(0,0)*euler_xhat(2,0) + euler_xhat(1,0)) - euler_xhat(7,0)*(euler_xhat(2,0) - euler_xhat(0,0)*euler_xhat(1,0)) + euler_xhat(6,0);
+						xhatdot(10,0) = euler_xhat(7,0)*(1 + euler_xhat(0,0)*euler_xhat(2,0)*euler_xhat(1,0)) - euler_xhat(8,0)*(euler_xhat(0,0) - euler_xhat(2,0)*euler_xhat(1,0)) + euler_xhat(6,0)*euler_xhat(2,0);
+						xhatdot(11,0) = euler_xhat(8,0) - euler_xhat(6,0)*euler_xhat(1,0) + euler_xhat(7,0)*euler_xhat(0,0);
+						xhatdot = xhatdot + (K_observer * (z - H * xhat));
+						euler_xhat = euler_xhat + xhatdot * dt;
 
 						xhatdot(0,0) = xhat(3,0) + xhat(5,0)*xhat(1,0) + xhat(4,0)*xhat(0,0)*xhat(1,0);
 						xhatdot(1,0) = xhat(4,0) - xhat(5,0)*xhat(0,0);
@@ -575,14 +661,32 @@ void ExogenousKalman::run()
 						dyt = dyt + K_observer * (z - H*xhat_t);
 
 						xhat = xhat + (xhatdot + dyt + dym*2)*(dt/6);
+						
+						//xhat = xhat + imu_mask * xhatdot *dt;
+
+						if(update_gps) {
+							// xhat = xhat + gps_mask * xhatdot * gps_dt;
+						}
 
 
 						if(xhat(11,0) > 0) {
 							xhat(11,0) = 0;
 						}
 
+
+
+
+
+
+
+
+
 						// Linear Kalman filter
 						
+						matrix::Matrix<float, 12, 12> f;
+						matrix::Matrix<float, 12, 12> F;
+						F.setZero();
+
 						
 						F(0,3) = 1;
 						F(1,4) = 1;
@@ -591,6 +695,7 @@ void ExogenousKalman::run()
 						F(10,7) = 1;
 						F(11,8) = 1;
 						
+
 						/*
 						F(0,0) = xhat(4,0)*xhat(1,0); F(0,1) = xhat(5,0)+xhat(4,0)*xhat(0,0); F(0,3) = 1; F(0,4) = xhat(0,0)*xhat(1,0); F(0,5) = xhat(1,0);
 						F(1,0) = -xhat(5,0); F(1,4) = 1; F(1,5) = xhat(0,0);
@@ -605,40 +710,21 @@ void ExogenousKalman::run()
 						F(10,0) = xhat(7,0)*xhat(2,0)*xhat(1,0)-xhat(8,0); F(10,1) = xhat(7,0)*xhat(0,0)*xhat(2,0)+xhat(8,0)*xhat(2,0); F(10,2) = xhat(7,0)*xhat(0,0)*xhat(1,0)+xhat(8,0)*xhat(1,0)+xhat(6,0); F(10,6) = xhat(2,0); F(10,7) = 1+xhat(0,0)*xhat(1,0)+xhat(2,0); F(10,8) = -xhat(0,0)+xhat(2,0)*xhat(1,0);
 						F(11,0) = xhat(7,0); F(11,1) = -xhat(6,0); F(11,6) = -xhat(1,0); F(11,7) = xhat(0,0); F(11,8) = 1;
 						*/
+
 						matrix::Matrix<float, 12, 12> linear_K;
 						matrix::Matrix<float, 12, 12> linear_Pdot;
 						matrix::Matrix<float, 12, 1> linear_xhatdot, linear_xhat_t;
+						matrix::Matrix<float, 4, 1> u;
 						linear_xhatdot.setZero();
+						
+						u(0,0) = ft_filtered;
+						u(1,0) = tx_filtered;
+						u(2,0) = ty_filtered;
+						u(3,0) = tz_filtered;
+						
+						linear_K = linear_P*HT*R_inv;
 
-						/*
-						linear_xhatdot(0,0) = xhat(3,0);
-						linear_xhatdot(1,0) = xhat(4,0);
-						linear_xhatdot(2,0) = xhat(5,0);
-						linear_xhatdot(3,0) = (tx_filtered/Ix);
-						linear_xhatdot(4,0) = (ty_filtered/Iy);
-						linear_xhatdot(5,0) = (tz_filtered/Iz);
-						linear_xhatdot(6,0) = -g*xhat(1,0);
-						linear_xhatdot(7,0) = g*xhat(0,0);
-						linear_xhatdot(8,0) = g - (ft_filtered/m);
-						linear_xhatdot(9,0) = xhat(6,0);
-						linear_xhatdot(10,0) = xhat(7,0);
-						linear_xhatdot(11,0) = xhat(8,0);
-						*/
-						
-						linear_xhatdot(0,0) = xhat(3,0) + xhat(5,0)*xhat(1,0) + xhat(4,0)*xhat(0,0)*xhat(1,0);
-						linear_xhatdot(1,0) = xhat(4,0) - xhat(5,0)*xhat(0,0);
-						linear_xhatdot(2,0) = xhat(5,0) + xhat(4,0)*xhat(0,0);
-						linear_xhatdot(3,0) = ((Iy-Iz)/Ix)*xhat(5,0)*xhat(4,0) + (tx/Ix);
-						linear_xhatdot(4,0) = ((Iz-Ix)/Iy)*xhat(3,0)*xhat(5,0) + (ty/Iy);
-						linear_xhatdot(5,0) = ((Ix-Iy)/Iz)*xhat(3,0)*xhat(4,0) + (tz/Iz);
-						linear_xhatdot(6,0) = xhat(5,0)*xhat(7,0) - xhat(4,0)*xhat(8,0) - g*xhat(1,0);
-						linear_xhatdot(7,0) = xhat(3,0)*xhat(8,0) - xhat(5,0)*xhat(6,0) + g*xhat(0,0);
-						linear_xhatdot(8,0) = xhat(4,0)*xhat(6,0) - xhat(3,0)*xhat(7,0) + g - (ft/m);
-						linear_xhatdot(9,0) = xhat(8,0)*(xhat(0,0)*xhat(2,0) + xhat(1,0)) - xhat(7,0)*(xhat(2,0) - xhat(0,0)*xhat(1,0)) + xhat(6,0);
-						linear_xhatdot(10,0) = xhat(7,0)*(1 + xhat(0,0)*xhat(2,0)*xhat(1,0)) - xhat(8,0)*(xhat(0,0) - xhat(2,0)*xhat(1,0)) + xhat(6,0)*xhat(2,0);
-						linear_xhatdot(11,0) = xhat(8,0) - xhat(6,0)*xhat(1,0) + xhat(7,0)*xhat(0,0);
-						
-						/*
+						/****** EULER *******/
 						linear_xhatdot(0,0) = xhat(3,0);
 						linear_xhatdot(1,0) = xhat(4,0);
 						linear_xhatdot(2,0) = xhat(5,0);
@@ -651,109 +737,91 @@ void ExogenousKalman::run()
 						linear_xhatdot(9,0) = xhat(6,0);
 						linear_xhatdot(10,0) = xhat(7,0);
 						linear_xhatdot(11,0) = xhat(8,0);
-						*/
-						//dt *= 1.3;
-						linear_K = linear_P*HT*R_inv;
 
-						linear_xhatdot = linear_xhatdot + linear_K * (z - H*xhat);
-						//linear_xhat = linear_xhat + linear_xhatdot*dt;
+						linear_xhatdot = linear_xhatdot + F*(euler_linear_xhat - xhat) + linear_K*( xhat - euler_linear_xhat );
+						euler_linear_xhat = euler_linear_xhat + linear_xhatdot*dt;
+						/****** EULER *******/
+						
+
+						linear_xhatdot(0,0) = xhat(3,0);
+						linear_xhatdot(1,0) = xhat(4,0);
+						linear_xhatdot(2,0) = xhat(5,0);
+						linear_xhatdot(3,0) = (tx/Ix);
+						linear_xhatdot(4,0) = (ty/Iy);
+						linear_xhatdot(5,0) = (tz/Iz);
+						linear_xhatdot(6,0) = - g*xhat(1,0);
+						linear_xhatdot(7,0) = g*xhat(0,0);
+						linear_xhatdot(8,0) = g - (ft/m);
+						linear_xhatdot(9,0) = xhat(6,0);
+						linear_xhatdot(10,0) = xhat(7,0);
+						linear_xhatdot(11,0) = xhat(8,0);
+						linear_xhatdot + F*(linear_xhat - xhat) + linear_K*( xhat - linear_xhat );
+						
+						//dt *= 2;
 						// Step 1
 						linear_xhat_t = linear_xhat + linear_xhatdot*(dt/2);
 						// Step 2
 						
-						dyt(0,0) = linear_xhat_t(3,0) + linear_xhat_t(5,0)*linear_xhat_t(1,0) + linear_xhat_t(4,0)*linear_xhat_t(0,0)*linear_xhat_t(1,0);
-						dyt(1,0) = linear_xhat_t(4,0) - linear_xhat_t(5,0)*linear_xhat_t(0,0);
-						dyt(2,0) = linear_xhat_t(5,0) + linear_xhat_t(4,0)*linear_xhat_t(0,0);
-						dyt(3,0) = ((Iy-Iz)/Ix)*linear_xhat_t(5,0)*linear_xhat_t(4,0) + (tx/Ix);
-						dyt(4,0) = ((Iz-Ix)/Iy)*linear_xhat_t(3,0)*linear_xhat_t(5,0) + (ty/Iy);
-						dyt(5,0) = ((Ix-Iy)/Iz)*linear_xhat_t(3,0)*linear_xhat_t(4,0) + (tz/Iz);
-						dyt(6,0) = linear_xhat_t(5,0)*linear_xhat_t(7,0) - linear_xhat_t(4,0)*linear_xhat_t(8,0) - g*linear_xhat_t(1,0);
-						dyt(7,0) = linear_xhat_t(3,0)*linear_xhat_t(8,0) - linear_xhat_t(5,0)*linear_xhat_t(6,0) + g*linear_xhat_t(0,0);
-						dyt(8,0) = linear_xhat_t(4,0)*linear_xhat_t(6,0) - linear_xhat_t(3,0)*linear_xhat_t(7,0) + g - (ft/m);
-						dyt(9,0) = linear_xhat_t(8,0)*(linear_xhat_t(0,0)*linear_xhat_t(2,0) + linear_xhat_t(1,0)) - linear_xhat_t(7,0)*(linear_xhat_t(2,0) - linear_xhat_t(0,0)*linear_xhat_t(1,0)) + linear_xhat_t(6,0);
-						dyt(10,0) = linear_xhat_t(7,0)*(1 + linear_xhat_t(0,0)*linear_xhat_t(2,0)*linear_xhat_t(1,0)) - linear_xhat_t(8,0)*(linear_xhat_t(0,0) - linear_xhat_t(2,0)*linear_xhat_t(1,0)) + linear_xhat_t(6,0)*linear_xhat_t(2,0);
-						dyt(11,0) = linear_xhat_t(8,0) - linear_xhat_t(6,0)*linear_xhat_t(1,0) + linear_xhat_t(7,0)*linear_xhat_t(0,0);
-						/*
-						dyt(0,0) = xhat_t(3,0);
-						dyt(1,0) = xhat_t(4,0);
-						dyt(2,0) = xhat_t(5,0);
+						dyt(0,0) = linear_xhat_t(3,0);
+						dyt(1,0) = linear_xhat_t(4,0);
+						dyt(2,0) = linear_xhat_t(5,0);
 						dyt(3,0) = (tx/Ix);
 						dyt(4,0) = (ty/Iy);
 						dyt(5,0) = (tz/Iz);
-						dyt(6,0) = - g*xhat_t(1,0);
-						dyt(7,0) = g*xhat_t(0,0);
+						dyt(6,0) = - g*linear_xhat_t(1,0);
+						dyt(7,0) = g*linear_xhat_t(0,0);
 						dyt(8,0) = g - (ft/m);
-						dyt(9,0) = xhat_t(6,0);
-						dyt(10,0) = xhat_t(7,0);
-						dyt(11,0) = xhat_t(8,0);
-						*/
-						dyt = dyt + linear_K * (z - H*linear_xhat_t);
+						dyt(9,0) = linear_xhat_t(6,0);
+						dyt(10,0) = linear_xhat_t(7,0);
+						dyt(11,0) = linear_xhat_t(8,0);
+						
+						dyt = dyt + F*(linear_xhat_t - xhat) + linear_K*( xhat - linear_xhat_t );
 						linear_xhat_t = linear_xhat + dyt*(dt/2);
 						// Step 3
-						
-						dym(0,0) = linear_xhat_t(3,0) + linear_xhat_t(5,0)*linear_xhat_t(1,0) + linear_xhat_t(4,0)*linear_xhat_t(0,0)*linear_xhat_t(1,0);
-						dym(1,0) = linear_xhat_t(4,0) - linear_xhat_t(5,0)*linear_xhat_t(0,0);
-						dym(2,0) = linear_xhat_t(5,0) + linear_xhat_t(4,0)*linear_xhat_t(0,0);
-						dym(3,0) = ((Iy-Iz)/Ix)*linear_xhat_t(5,0)*linear_xhat_t(4,0) + (tx/Ix);
-						dym(4,0) = ((Iz-Ix)/Iy)*linear_xhat_t(3,0)*linear_xhat_t(5,0) + (ty/Iy);
-						dym(5,0) = ((Ix-Iy)/Iz)*linear_xhat_t(3,0)*linear_xhat_t(4,0) + (tz/Iz);
-						dym(6,0) = linear_xhat_t(5,0)*linear_xhat_t(7,0) - linear_xhat_t(4,0)*linear_xhat_t(8,0) - g*linear_xhat_t(1,0);
-						dym(7,0) = linear_xhat_t(3,0)*linear_xhat_t(8,0) - linear_xhat_t(5,0)*linear_xhat_t(6,0) + g*linear_xhat_t(0,0);
-						dym(8,0) = linear_xhat_t(4,0)*linear_xhat_t(6,0) - linear_xhat_t(3,0)*linear_xhat_t(7,0) + g - (ft/m);
-						dym(9,0) = linear_xhat_t(8,0)*(linear_xhat_t(0,0)*linear_xhat_t(2,0) + linear_xhat_t(1,0)) - linear_xhat_t(7,0)*(linear_xhat_t(2,0) - linear_xhat_t(0,0)*linear_xhat_t(1,0)) + linear_xhat_t(6,0);
-						dym(10,0) = linear_xhat_t(7,0)*(1 + linear_xhat_t(0,0)*linear_xhat_t(2,0)*linear_xhat_t(1,0)) - linear_xhat_t(8,0)*(linear_xhat_t(0,0) - linear_xhat_t(2,0)*linear_xhat_t(1,0)) + linear_xhat_t(6,0)*linear_xhat_t(2,0);
-						dym(11,0) = linear_xhat_t(8,0) - linear_xhat_t(6,0)*linear_xhat_t(1,0) + linear_xhat_t(7,0)*linear_xhat_t(0,0);
-						/*
-						dym(0,0) = xhat_t(3,0);
-						dym(1,0) = xhat_t(4,0);
-						dym(2,0) = xhat_t(5,0);
+					
+						dym(0,0) = linear_xhat_t(3,0);
+						dym(1,0) = linear_xhat_t(4,0);
+						dym(2,0) = linear_xhat_t(5,0);
 						dym(3,0) = (tx/Ix);
 						dym(4,0) = (ty/Iy);
 						dym(5,0) = (tz/Iz);
-						dym(6,0) = - g*xhat_t(1,0);
-						dym(7,0) = g*xhat_t(0,0);
+						dym(6,0) = - g*linear_xhat_t(1,0);
+						dym(7,0) = g*linear_xhat_t(0,0);
 						dym(8,0) = g - (ft/m);
-						dym(9,0) = xhat_t(6,0);
-						dym(10,0) = xhat_t(7,0);
-						dym(11,0) = xhat_t(8,0);
-						*/
-						dym = dym + linear_K * (z - H*linear_xhat_t);
+						dym(9,0) = linear_xhat_t(6,0);
+						dym(10,0) = linear_xhat_t(7,0);
+						dym(11,0) = linear_xhat_t(8,0);
+						
+						dym = dym + F*(linear_xhat_t - xhat) + linear_K*( xhat - linear_xhat_t );
 						linear_xhat_t = linear_xhat + dym*dt;
 						dym += dyt;
 						// Step 4
 						
-						dyt(0,0) = linear_xhat_t(3,0) + linear_xhat_t(5,0)*linear_xhat_t(1,0) + linear_xhat_t(4,0)*linear_xhat_t(0,0)*linear_xhat_t(1,0);
-						dyt(1,0) = linear_xhat_t(4,0) - linear_xhat_t(5,0)*linear_xhat_t(0,0);
-						dyt(2,0) = linear_xhat_t(5,0) + linear_xhat_t(4,0)*linear_xhat_t(0,0);
-						dyt(3,0) = ((Iy-Iz)/Ix)*linear_xhat_t(5,0)*linear_xhat_t(4,0) + (tx/Ix);
-						dyt(4,0) = ((Iz-Ix)/Iy)*linear_xhat_t(3,0)*linear_xhat_t(5,0) + (ty/Iy);
-						dyt(5,0) = ((Ix-Iy)/Iz)*linear_xhat_t(3,0)*linear_xhat_t(4,0) + (tz/Iz);
-						dyt(6,0) = linear_xhat_t(5,0)*linear_xhat_t(7,0) - linear_xhat_t(4,0)*linear_xhat_t(8,0) - g*linear_xhat_t(1,0);
-						dyt(7,0) = linear_xhat_t(3,0)*linear_xhat_t(8,0) - linear_xhat_t(5,0)*linear_xhat_t(6,0) + g*linear_xhat_t(0,0);
-						dyt(8,0) = linear_xhat_t(4,0)*linear_xhat_t(6,0) - linear_xhat_t(3,0)*linear_xhat_t(7,0) + g - (ft/m);
-						dyt(9,0) = linear_xhat_t(8,0)*(linear_xhat_t(0,0)*linear_xhat_t(2,0) + linear_xhat_t(1,0)) - linear_xhat_t(7,0)*(linear_xhat_t(2,0) - linear_xhat_t(0,0)*linear_xhat_t(1,0)) + linear_xhat_t(6,0);
-						dyt(10,0) = linear_xhat_t(7,0)*(1 + linear_xhat_t(0,0)*linear_xhat_t(2,0)*linear_xhat_t(1,0)) - linear_xhat_t(8,0)*(linear_xhat_t(0,0) - linear_xhat_t(2,0)*linear_xhat_t(1,0)) + linear_xhat_t(6,0)*linear_xhat_t(2,0);
-						dyt(11,0) = linear_xhat_t(8,0) - linear_xhat_t(6,0)*linear_xhat_t(1,0) + linear_xhat_t(7,0)*linear_xhat_t(0,0);
-						/*
-						dyt(0,0) = xhat_t(3,0);
-						dyt(1,0) = xhat_t(4,0);
-						dyt(2,0) = xhat_t(5,0);
+						dyt(0,0) = linear_xhat_t(3,0);
+						dyt(1,0) = linear_xhat_t(4,0);
+						dyt(2,0) = linear_xhat_t(5,0);
 						dyt(3,0) = (tx/Ix);
 						dyt(4,0) = (ty/Iy);
 						dyt(5,0) = (tz/Iz);
-						dyt(6,0) = - g*xhat_t(1,0);
-						dyt(7,0) = g*xhat_t(0,0);
+						dyt(6,0) = - g*linear_xhat_t(1,0);
+						dyt(7,0) = g*linear_xhat_t(0,0);
 						dyt(8,0) = g - (ft/m);
-						dyt(9,0) = xhat_t(6,0);
-						dyt(10,0) = xhat_t(7,0);
-						dyt(11,0) = xhat_t(8,0);
-						*/
-						dyt = dyt + linear_K * (z - H*linear_xhat_t);
+						dyt(9,0) = linear_xhat_t(6,0);
+						dyt(10,0) = linear_xhat_t(7,0);
+						dyt(11,0) = linear_xhat_t(8,0);
+
+						dyt = dyt + F*(linear_xhat_t - xhat) + linear_K*( xhat - linear_xhat_t );
 
 						linear_xhat = linear_xhat + (linear_xhatdot + dyt + dym*2)*(dt/6);
+						//linear_xhatdot = linear_xhatdot + linear_K * (z - H*xhat);
+
+						//linear_xhatdot = linear_xhatdot + F*(linear_xhat - xhat) + linear_K*( xhat - linear_xhat );
+
+						//linear_xhat = linear_xhat + linear_xhatdot*dt;
 
 						linear_Pdot = F*linear_P + linear_P*F.transpose() + Q - linear_P*HT * R_inv * H * linear_P;
-						linear_P = linear_P + linear_Pdot*dt;
+						
+						linear_P = linear_P + linear_Pdot*0.0001;
 						
 						
 						/*
@@ -774,15 +842,18 @@ void ExogenousKalman::run()
 							.x = xhat(0,0),
 							.y = xhat(1,0),
 							.z = xhat(2,0),
-							.a = raw_imu.gyro_rad[0],
-							.b= -raw_imu.gyro_rad[1],
-							.c= -raw_imu.gyro_rad[2],
-							.d = ty,
+							.a = euler_xhat(0,0),
+							.b= euler_xhat(1,0),
+							.c= euler_xhat(2,0),
+							.d = xhat(9,0),
 							.e = xhat(10,0),
 							.f = xhat(11,0),
-							.x_gps = linear_xhat(9,0),
-							.y_gps = linear_xhat(10,0),
-							.z_gps = linear_xhat(11,0),
+							.g = roll_true,
+							.h = pitch_true,
+							.i = yaw_true,
+							.x_gps = euler_linear_xhat(0,0),
+							.y_gps = euler_linear_xhat(1,0),
+							.z_gps = euler_linear_xhat(2,0),
 							.roll = linear_xhat(0,0),
 							.pitch = linear_xhat(1,0),
 							.yaw = linear_xhat(2,0)
@@ -807,9 +878,9 @@ void ExogenousKalman::run()
 void ExogenousKalman::update_model_inputs(struct actuator_outputs_s * act_out, float &tx, float &ty, float &tz, float &ft) {
 	/* Convert drone thrust levels to tx, ty, tz and ft */
 	// PX4_INFO("Actuator Outputs:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3]);
-	float b = 1.3e-7;
+	float b = 4e-8;
 	float l = 0.25;
-	float d = 5e-8;
+	float d = 9e-8;
 
 	// std::cout << act_out->output[0] << std::endl;
 	//PX4_INFO("Act:\t%8.4f\t%8.4f\t%8.4f\t%8.4f", (double)act_out->output[0], (double)act_out->output[1], (double)act_out->output[2], (double)act_out->output[3] );
@@ -817,7 +888,7 @@ void ExogenousKalman::update_model_inputs(struct actuator_outputs_s * act_out, f
 	tx = b*l*(pow(act_out->output[1], 2) + pow(act_out->output[2], 2) - pow(act_out->output[0], 2) - pow(act_out->output[3], 2));
 	ty = b*l*(pow(act_out->output[1], 2) + pow(act_out->output[3], 2) - pow(act_out->output[0], 2) - pow(act_out->output[2], 2));
 	tz = d*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) - pow(act_out->output[2], 2) - pow(act_out->output[3], 2));
-	ft = -13.7f*b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
+	ft = -43.7f*b*(pow(act_out->output[0], 2) + pow(act_out->output[1], 2) + pow(act_out->output[2], 2) + pow(act_out->output[3], 2));
 	// PX4_INFO("Actuator Outputs:\t%8.4f", (double)ft);
 
 	tx_filtered = _kf_tx.updateEstimate(tx);
@@ -970,6 +1041,27 @@ void ExogenousKalman::MadgwickQuaternionUpdate(float q[], float ax, float ay, fl
 	q[1] = q2 * norm;
 	q[2] = q3 * norm;
 	q[3] = q4 * norm;
+}
+
+void ExogenousKalman::acc_position_extrapolation(struct sensor_combined_s *raw_imu, float pos_correction[], float velocity[], float position[], float roll, float pitch, float yaw, float dt){
+	//float newVelocity[3] = {0.0f, 0.0f, 0.0f};
+	float An = cos(pitch)*cos(yaw)*raw_imu->accelerometer_m_s2[0]+(sin(pitch)*sin(roll)*cos(yaw)-cos(pitch)*sin(yaw))*raw_imu->accelerometer_m_s2[1]+(sin(pitch)*cos(roll)*cos(yaw)+sin(yaw)*sin(roll))*raw_imu->accelerometer_m_s2[2];
+	float Ae = cos(pitch)*sin(yaw)*raw_imu->accelerometer_m_s2[0]+(sin(yaw)*sin(pitch)*sin(roll)+cos(yaw)*cos(roll))*raw_imu->accelerometer_m_s2[1]+(sin(pitch)*sin(roll)*cos(roll)-cos(yaw)*sin(pitch))*raw_imu->accelerometer_m_s2[2];
+	float Ad = -sin(pitch)*raw_imu->accelerometer_m_s2[0]+sin(roll)*cos(pitch)*raw_imu->accelerometer_m_s2[1]+cos(roll)*cos(pitch)*raw_imu->accelerometer_m_s2[2];
+	// float dt = (float)raw_imu->accelerometer_integral_dt / 1000000;
+	Ad += 9.8f;
+	velocity[0] = velocity[0] + An * dt;
+	velocity[1] = velocity[1] + Ae * dt;
+	velocity[2] = velocity[2] + Ad * dt;
+
+	position[0] = position[0] + velocity[0] * dt  + (An * dt*dt) / 2;
+	position[1] = position[1] + velocity[1] * dt  + (Ae * dt*dt) / 2;
+	position[2] = position[2] + velocity[2] * dt  + (Ad * dt*dt) / 2;
+
+	pos_correction[0] = position[0];
+	pos_correction[1] = position[1];
+	pos_correction[2] = position[2];
+
 }
 
 void ExogenousKalman::MadgwickQuaternionUpdateIMU(float q[], float ax, float ay, float az, float gx, float gy, float gz, float deltat)
