@@ -63,7 +63,7 @@
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/actuator_outputs.h>
 
-#define beta 15.2f
+#define beta 50.0f
 
 int ExogenousKalman::print_usage(const char *reason)
 {
@@ -430,15 +430,14 @@ void ExogenousKalman::run()
 					}
 					// std::cout << dt << std::endl;
 				}
-				/*
-				process_IMU_data(&raw_imu, q, (float)dt);
-				yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);   
-				pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
-				roll  = -atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
-				*/
+				
+				//process_IMU_data(&raw_imu, q, (float)dt);
+				//yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);   
+				//pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
+				//roll  = -atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
+				
 				
 				orb_copy(ORB_ID(vehicle_attitude), attitude_sub_fd, &att);
-				
 				q[0] = att.q[0];
 				q[1] = att.q[1];
 				q[2] = att.q[2];
@@ -472,19 +471,6 @@ void ExogenousKalman::run()
 				yaw += dist(generator);
 				
 				true_yaw = yaw + 3.1415*mult_yaw;
-
-				/*exogenous_kalman_s exogenous_kalman = {
-					.timestamp = hrt_absolute_time(),
-					.q[0] = roll,
-					.q[1] = pitch,
-					.q[2] = yaw
-				};
-
-				if (exogenous_kalman_pub == nullptr) {
-					exogenous_kalman_pub = orb_advertise_queue(ORB_ID(exogenous_kalman), &exogenous_kalman, 10);
-				} else {
-					orb_publish(ORB_ID(exogenous_kalman), exogenous_kalman_pub, &exogenous_kalman);
-				}*/
 
 				/*PX4_INFO("Quaternions:\t%8.4f\t%8.4f\t%8.4f",
 						(double)roll,
@@ -942,7 +928,7 @@ void ExogenousKalman::process_IMU_data(struct sensor_combined_s *raw_imu, float 
 	mag_scaled[2] = raw_imu->magnetometer_ga[2];			
 	
 	// MadgwickQuaternionUpdate(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], mag_scaled[0], mag_scaled[1], mag_scaled[2], dt);   
-	MadgwickQuaternionUpdateIMU(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], dt);	
+	MadgwickQuaternionUpdate(q, accel_scaled[0], accel_scaled[1], accel_scaled[2], gyro_scaled[0], gyro_scaled[1], gyro_scaled[2], mag_scaled[0], mag_scaled[1], mag_scaled[2], dt);	
 	// roll  = atan2(2.0f * (q[0] * q[1] + q[2] * q[3]), q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]);
 	// pitch = -asin(2.0f * (q[1] * q[3] - q[0] * q[2]));
 	// yaw   = atan2(2.0f * (q[1] * q[2] + q[0] * q[3]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
